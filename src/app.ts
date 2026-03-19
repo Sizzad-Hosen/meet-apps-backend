@@ -16,6 +16,6 @@ app.get('/', (req,res)=>{
 })
 
 // api routes
-app.use("/api/v1", AuthRoutes);
+app.use("/api/v1/auth", AuthRoutes);
 
 export default app;
