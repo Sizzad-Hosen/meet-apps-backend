@@ -23,20 +23,18 @@ const user = await AuthServices.registerUser(req.body);
 
 
 // LOGIN
-const login= catchAsync(async (req, res) => {
+const login= catchAsync(async (req: Request, res: Response) => {
 
     
   const result = await AuthServices.loginUser(req.body);
-console.log("result", result)
+  console.log("result", result)
   const { refreshToken } = result;
 
-res.cookie("refreshToken", refreshToken, {
-    secure: false,
-    httpOnly: true,
-  });
   res.cookie("refreshToken", refreshToken, {
     secure: false,
     httpOnly: true,
+    sameSite: 'strict',
+    maxAge:   7 * 24 * 60 * 60 * 1000,
   });
 
   sendResponse(res, {
