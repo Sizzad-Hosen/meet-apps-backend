@@ -14,13 +14,7 @@ interface IJwtPayload extends JwtPayload {
 }
 export const verifyToken = async (token: string, secret: Secret): Promise<IJwtPayload> => {
 
-
-    console.log("VERIFY USING SECRET:", secret);
-    console.log("VERIFY TOKEN:", token);
-
     const decoded = jwt.verify(token, secret) as IJwtPayload;
-
-    console.log("Decoded Token:", decoded);
 
     return decoded;
   

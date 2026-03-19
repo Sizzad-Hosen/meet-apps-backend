@@ -1,43 +1,54 @@
-import { AuthServices } from "./auth.service"
 
-const register = async (req: any, res: any) => {
-    try {
+import { Request, Response } from 'express';
+import { StatusCodes } from 'http-status-codes';
+import { catchAsync }   from '../../../shared/catchAsync';
+import { AuthServices } from './auth.service';
+import { sendResponse } from '../../../shared/sendResponse';
+import httpStatus from "http-status";
+// REGISTER
 
-        console.log("req body", req.body)
-        const user = await AuthServices.registerUser(req.body);
-        console.log("user", user)
+const register = catchAsync(async (req: Request, res: Response) => {
 
-        res.status(201).json({
-            success: true,
-            message: "User registered successfully",
-            data: user
-        });
-    } catch (error) {
-        res.status(400).json({
-            success: false,
-            message: (error as Error).message
-        });
-    }
+const user = await AuthServices.registerUser(req.body);
+
+  sendResponse(res, {
+    statusCode: StatusCodes.CREATED,
+    success:    true,
+    message:    'User registered successfully',
+    data: {
+      user
+    },
+  });
+});
+
+
+// LOGIN
+const login= catchAsync(async (req, res) => {
+
+    
+  const result = await AuthServices.loginUser(req.body);
+console.log("result", result)
+  const { refreshToken } = result;
+
+res.cookie("refreshToken", refreshToken, {
+    secure: false,
+    httpOnly: true,
+  });
+  res.cookie("refreshToken", refreshToken, {
+    secure: false,
+    httpOnly: true,
+  });
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: "Login successful!",
+    data: result,
+  });
+});
+
+
+export const AuthControllers = {
+  register,
+  login,
 };
-
-const login = async (req: any, res: any) => {
-    try {
-        const user = await AuthServices.loginUser(req.body);
-        res.status(200).json({
-            success: true,
-            message: "User logged in successfully",
-            data: user
-        });
-    } catch (error) {
-        res.status(400).json({
-            success: false,
-            message: (error as Error).message
-        });
-    }
-};
-
-
-export const AuthControllers ={
-    register,
-    login
-}

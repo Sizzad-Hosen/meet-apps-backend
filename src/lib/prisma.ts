@@ -1,4 +1,4 @@
-// src/config/db.ts  অথবা  src/shared/prisma.ts
+
 import { PrismaClient } from '../../generated/prisma';
 import { PrismaPg } from '@prisma/adapter-pg';
 import 'dotenv/config';
