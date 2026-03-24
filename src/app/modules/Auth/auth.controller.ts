@@ -9,14 +9,22 @@ import httpStatus from "http-status";
 
 const register = catchAsync(async (req: Request, res: Response) => {
 
-const user = await AuthServices.registerUser(req.body);
+const result = await AuthServices.registerUser(req.body);
+  const { refreshToken } = result;
+
+  res.cookie("refreshToken", refreshToken, {
+    secure: false,
+    httpOnly: true,
+    sameSite: 'strict',
+    maxAge:   7 * 24 * 60 * 60 * 1000,
+  });
 
   sendResponse(res, {
     statusCode: StatusCodes.CREATED,
     success:    true,
     message:    'User registered successfully',
     data: {
-      user
+      user: result.user
     },
   });
 });
