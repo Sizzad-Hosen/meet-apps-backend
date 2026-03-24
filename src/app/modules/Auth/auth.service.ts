@@ -4,7 +4,7 @@ import { StatusCodes } from 'http-status-codes';
 import prisma from '../../../lib/prisma';
 import ApiError from '../../errors/ApiError';
 import config from '../../config';
-import { generateToken } from '../../../helpers/jwtHelpers';
+import { generateToken, verifyToken } from '../../../helpers/jwtHelpers';
 import { sendEmail } from '../../../shared/sendEmail';
 
 const registerUser = async (payload: any) => {
@@ -146,12 +146,39 @@ const forgotPasswordUser = async(payload: { email: string })=>{
 
 }
 
-const resetPassword = async()=>{
+const resetPassword = async(payload: { email: string, newPassword: string })=>{
+
+   const isUserExist = await prisma.user.findUnique({
+        where: {
+            email: payload.email,
+        }
+    })
+
+    if (!isUserExist) {
+        throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
+    }
+
+    // if (!isUserExist.isVerified) {
+    //     throw new ApiError(StatusCodes.BAD_REQUEST, "Email not verified");
+    // }
+
+
+    const newHashedPassword = await bcrypt.hash(payload.newPassword, Number(config.salt_round));
+    await prisma.user.update({
+        where: {
+            id: isUserExist.id,
+        },
+        data: {
+            password: newHashedPassword,
+        }
+    });
+
   
 }
 
 export const AuthServices = {
   registerUser,
   loginUser,
-  forgotPasswordUser
+  forgotPasswordUser,
+  resetPassword
 };
