@@ -175,10 +175,47 @@ const resetPassword = async(payload: { email: string, newPassword: string })=>{
 
   
 }
+const refreshToken = async (token: string) => {
+  
+  const decoded = await verifyToken(token, config.jwt.refresh_token_secret as string); // ✅ await here
+
+  if (!decoded?.email) {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, 'Invalid or expired refresh token');
+  }
+
+  const existingUser = await prisma.user.findUnique({
+    where: { email: decoded.email },
+  });
+
+  if (!existingUser) {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, 'User not found');
+  }
+
+  const tokenPayload = {
+    userId: existingUser.id,
+    email:  existingUser.email,
+    role:   existingUser.role,
+  };
+
+  const accessToken = generateToken(
+    tokenPayload,
+    config.jwt.jwt_secret as string,
+    config.jwt.expires_in as string,
+  );
+
+  const newRefreshToken = generateToken(
+    tokenPayload,
+    config.jwt.refresh_token_secret as string,
+    config.jwt.refresh_token_expires_in as string,
+  );
+
+  return { accessToken, refreshToken: newRefreshToken };
+};
 
 export const AuthServices = {
   registerUser,
   loginUser,
   forgotPasswordUser,
-  resetPassword
+  resetPassword,
+  refreshToken
 };
