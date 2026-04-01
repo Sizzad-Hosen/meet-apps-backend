@@ -59,7 +59,7 @@ const getMeetingByJoinCode = async (joinCode: string, userId: string) => {
         meeting_id: meeting.id,
         user_id: userId,
         role: isHost ? 'host' : 'guest',
-        status: isHost ? 'admitted' : 'waiting' // ✅ host সাথে সাথে admitted
+        status: isHost ? 'admitted' : 'waiting'
       }
     });
   }
@@ -86,23 +86,43 @@ const getMeetingByJoinCode = async (joinCode: string, userId: string) => {
   };
 };
 
-const admitParticipant = async (code: string, currentUserId: string) => {
+const getWaitingRoom = async (code: string, hostId: string) => {
   const meeting = await prisma.meeting.findUnique({
     where: { join_code: code }
   });
 
   if (!meeting) throw new Error('Meeting not found');
-  if (meeting.host_id !== currentUserId) throw new Error('Only host can admit participants');
+  if (meeting.host_id !== hostId) throw new Error('Only host can view');
 
-  const participant = await prisma.meetingParticipant.findFirst({
-    where: { meeting_id: meeting.id, user_id: currentUserId }
+  return await prisma.meetingParticipant.findMany({
+    where: {
+      meeting_id: meeting.id,
+      status: 'waiting'
+    },
+    include: { user: true }
+  });
+};
+
+const admitParticipant = async (code: string, targetUserId: string, currentUserId: string) => {
+  const meeting = await prisma.meeting.findUnique({
+    where: { join_code: code }
   });
 
-  if (!participant) throw new Error('Participant not found');
+  if (!meeting) throw new Error('Meeting not found');
+  if (meeting.host_id !== currentUserId) throw new Error('Only host can admit');
+
+  const participant = await prisma.meetingParticipant.findFirst({
+    where: { 
+      meeting_id: meeting.id, 
+      user_id: targetUserId,
+      status: 'waiting'
+    }
+  });
+
+  if (!participant) throw new Error('Participant not found in waiting room');
 
   const livekitToken = await generateLiveKitToken({
-    // here userId each participant id needs
-    userId: currentUserId,
+    userId: targetUserId,
     roomName: meeting.livekit_room_name,
     role: 'guest'
   });
@@ -116,7 +136,48 @@ const admitParticipant = async (code: string, currentUserId: string) => {
     }
   });
 
-  return { participant: updated, livekitToken };
+  return { 
+    participant: updated, 
+    livekitToken  // ✅ frontend কে পাঠাও, participant এটা দিয়ে LiveKit-এ connect করবে
+  };
+};
+
+const admitAll = async (code: string, hostId: string) => {
+  const meeting = await prisma.meeting.findUnique({
+    where: { join_code: code }
+  });
+
+  if (!meeting) throw new Error('Meeting not found');
+  if (meeting.host_id !== hostId) throw new Error('Only host can admit');
+
+  // waiting সবাইকে পাও
+  const waitingList = await prisma.meetingParticipant.findMany({
+    where: { meeting_id: meeting.id, status: 'waiting' }
+  });
+
+  // প্রতিজনের token generate করো
+  const results = await Promise.all(
+    waitingList.map(async (participant) => {
+      const livekitToken = await generateLiveKitToken({
+        userId: participant.user_id,
+        roomName: meeting.livekit_room_name,
+        role: 'guest'
+      });
+
+      await prisma.meetingParticipant.update({
+        where: { id: participant.id },
+        data: {
+          status: 'admitted',
+          livekit_token: livekitToken,
+          joined_at: new Date()
+        }
+      });
+
+      return { userId: participant.user_id, livekitToken };
+    })
+  );
+
+  return results;
 };
 
 const denyParticipant = async (code: string, currentUserId: string) => {
@@ -195,8 +256,10 @@ export const MeetingServices = {
   createMeetings,
   getMeetingByJoinCode,
   admitParticipant,
+  admitAll,
   denyParticipant,
   kickParticipant,
-  endMeeting
+  endMeeting,
+  getWaitingRoom
 };
 
