@@ -11,8 +11,10 @@ router.post("/create",
 router.post("/join",
     // validateRequest(),
     auth(), MeetingsControllers.joinMeeting);
+router.get("/:code/waiting-room", auth(), MeetingsControllers.getWaitingRoom);
+router.post("/:code/admit/:userId",  auth(), MeetingsControllers.admitParticipant);
+router.post("/:code/admit-all", auth(), MeetingsControllers.admitAll);
 
-router.post("/:code/admit",  auth(), MeetingsControllers.admitParticipant);
 router.post("/:code/deny",   auth(), MeetingsControllers.denyParticipant);
 router.post("/:code/kick",   auth(), MeetingsControllers.kickParticipant);
 router.post("/:code/end",            auth(), MeetingsControllers.endMeeting);

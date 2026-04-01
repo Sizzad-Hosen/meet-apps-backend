@@ -65,17 +65,33 @@ const  joinMeeting = catchAsync(async (req: Request, res: Response) => {
     }
   })
 
-
-  const admitParticipant =catchAsync( async (req: Request, res: Response) => {
+const getWaitingRoom = async (req: Request, res: Response) => {
   try {
     const { code } = req.params;
+    const hostId = req.user?.userId;
+
+    const waitingList = await MeetingServices.getWaitingRoom(code, hostId as string);
+
+    sendResponse(res, {
+      statusCode: StatusCodes.OK,
+      success: true,
+      message: 'Waiting room fetched',
+      data: waitingList
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+const admitParticipant = async (req: Request, res: Response) => {
+  try {
+    const { code, userId: targetUserId } = req.params;
     const currentUserId = req.user?.userId;
 
     if (!currentUserId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    const result = await MeetingServices.admitParticipant(code, currentUserId);
+    const result = await MeetingServices.admitParticipant(code, targetUserId, currentUserId);
 
     sendResponse(res, {
       statusCode: StatusCodes.OK,
@@ -86,7 +102,30 @@ const  joinMeeting = catchAsync(async (req: Request, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
-});
+};
+
+const admitAll = async (req: Request, res: Response) => {
+  try {
+    const { code } = req.params;
+    const currentUserId = req.user?.userId;
+
+    if (!currentUserId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const result = await MeetingServices.admitAll(code, currentUserId);
+
+    sendResponse(res, {
+      statusCode: StatusCodes.OK,
+      success: true,
+      message: 'All participants admitted successfully',
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 
 const denyParticipant =catchAsync( async (req: Request, res: Response) => {
   try {
@@ -158,7 +197,9 @@ export const MeetingsControllers = {
   createMeeting,
   joinMeeting,
   admitParticipant,
+  admitAll,
   denyParticipant,
   kickParticipant,
-  endMeeting
+  endMeeting,
+  getWaitingRoom
 };
