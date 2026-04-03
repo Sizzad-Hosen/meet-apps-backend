@@ -325,6 +325,73 @@ const assignCohost = async (code: string, targetUserId: string, currentUserId: s
   });
 };
 
+const getMeetingByCode = async (code: string, currentUserId: string) => {
+  const meeting = await prisma.meeting.findUnique({
+    where: { join_code: code },
+    include: {
+      meetingParticipants: {
+        include: {
+          user: { select: { id: true, name: true, email: true } }
+        }
+      }
+    }
+  });
+
+  if (!meeting) throw new Error('Meeting not found');
+
+  return meeting;
+};
+
+const updateMeeting = async (code: string, payload: any, currentUserId: string) => {
+  const meeting = await prisma.meeting.findUnique({
+    where: { join_code: code }
+  });
+
+  if (!meeting) throw new Error('Meeting not found');
+  if (meeting.host_id !== currentUserId) throw new Error('Only host can update meeting');
+
+  const {
+    title,
+    waiting_room_on,
+    max_participants,
+    allow_screenshare,
+    screenshare_needs_approval,
+    is_recorded,
+    scheduled_at
+  } = payload;
+
+  return await prisma.meeting.update({
+    where: { join_code: code },
+    data: {
+      ...(title && { title }),
+      ...(waiting_room_on !== undefined && { waiting_room_on }),
+      ...(max_participants && { max_participants }),
+      ...(allow_screenshare !== undefined && { allow_screenshare }),
+      ...(screenshare_needs_approval !== undefined && { screenshare_needs_approval }),
+      ...(is_recorded !== undefined && { is_recorded }),
+      ...(scheduled_at && { scheduled_at: new Date(scheduled_at) })
+    }
+  });
+};
+
+const deleteMeeting = async (code: string, currentUserId: string) => {
+  const meeting = await prisma.meeting.findUnique({
+    where: { join_code: code }
+  });
+
+  if (!meeting) throw new Error('Meeting not found');
+  if (meeting.host_id !== currentUserId) throw new Error('Only host can delete meeting');
+
+  // আগে participants delete করো
+  await prisma.meetingParticipant.deleteMany({
+    where: { meeting_id: meeting.id }
+  });
+
+  return await prisma.meeting.delete({
+    where: { join_code: code }
+  });
+};
+
 export const MeetingServices = {
   createMeetings,
   getMeetingByJoinCode,
@@ -337,5 +404,8 @@ export const MeetingServices = {
   muteParticipant,
   muteAll,
   getParticipants,
-  assignCohost
+  assignCohost,
+  getMeetingByCode,
+  deleteMeeting,
+  updateMeeting
 };

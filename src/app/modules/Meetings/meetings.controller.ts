@@ -276,9 +276,78 @@ const assignCohost = async (req: Request, res: Response) => {
   }
 };
 
+const getMeetingByCode = async (req: Request, res: Response) => {
+  try {
+    const { code } = req.params;
+    const currentUserId = req.user?.userId;
+
+    if (!currentUserId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const result = await MeetingServices.getMeetingByCode(code, currentUserId);
+
+    sendResponse(res, {
+      statusCode: StatusCodes.OK,
+      success: true,
+      message: 'Meeting fetched successfully',
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const updateMeeting = async (req: Request, res: Response) => {
+  try {
+    const { code } = req.params;
+    const currentUserId = req.user?.userId;
+
+    if (!currentUserId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const result = await MeetingServices.updateMeeting(code, req.body, currentUserId);
+
+    sendResponse(res, {
+      statusCode: StatusCodes.OK,
+      success: true,
+      message: 'Meeting updated successfully',
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const deleteMeeting = catchAsync(async (req: Request, res: Response) => {
+  try {
+    const { code } = req.params;
+    const currentUserId = req.user?.userId;
+
+    if (!currentUserId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    await MeetingServices.deleteMeeting(code, currentUserId);
+
+    sendResponse(res, {
+      statusCode: StatusCodes.OK,
+      success: true,
+      message: 'Meeting deleted successfully',
+      data: null
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 export const MeetingsControllers = {
   createMeeting,
   joinMeeting,
+  getMeetingByCode,
+  updateMeeting,
+  deleteMeeting,
   admitParticipant,
   admitAll,
   denyParticipant,
