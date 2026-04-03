@@ -46,7 +46,27 @@ const stopScreenShare = async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+const getScreenShareStatus = async (req: Request, res: Response) => {
+  try {
+    const { code } = req.params;
+    const currentUserId = req.user?.userId;
 
+    if (!currentUserId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const result = await ScreenShareServices.getScreenShareStatus(code, currentUserId);
+
+    sendResponse(res, {
+      statusCode: StatusCodes.OK,
+      success: true,
+      message: 'Screenshare status fetched successfully',
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
 const approveScreenShare = async (req: Request, res: Response) => {
   try {
     const { code, userId: targetUserId } = req.params;
@@ -95,6 +115,7 @@ export const ScreenShareControllers = {
     startScreenShare,
     stopScreenShare,
     denyScreenShare,
-    approveScreenShare
+    approveScreenShare,
+    getScreenShareStatus
 
 }
