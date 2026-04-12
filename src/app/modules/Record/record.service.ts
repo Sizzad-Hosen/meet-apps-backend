@@ -1,41 +1,87 @@
-import { EncodedFileOutput } from 'livekit-server-sdk';
-import prisma from '../../../lib/prisma';
-import { clientes } from '../../../helpers/s3'; 
+import {  EncodedFileOutput, EncodedFileType, RoomCompositeOptions, RoomServiceClient } from 'livekit-server-sdk';
 
-const startRecording = async (code: string, currentUserId: string) => {
+import prisma from '../../../lib/prisma';
+import { clientes } from '../../../helpers/s3';
+
+export const startRecording = async (code: string, currentUserId: string) => {
+  // ─── 1. Meeting Fetch ─────────────────────────────
   const meeting = await prisma.meeting.findUnique({
     where: { join_code: code }
   });
 
   if (!meeting) throw new Error('Meeting not found');
-  if (meeting.host_id !== currentUserId) throw new Error('Only host can start recording');
-  if (!meeting.is_recorded) throw new Error('Recording is disabled for this meeting');
 
-  const fileName = `recordings/${meeting.id}/${Date.now()}.mp4`;
+  if (meeting.host_id !== currentUserId) {
+    throw new Error('Only host can start recording');
+  }
 
-  const output = new EncodedFileOutput({
-    filepath: fileName
-  });
-
-  const egress = await clientes.egressClient.startRoomCompositeEgress(
-    meeting.livekit_room_name,
-    {
-      file: output
-    }
-  );
-
-  const recording = await prisma.recording.create({
-    data: {
+  // ─── 2. Duplicate Recording Check ──────────────────
+  const existingRecording = await prisma.recording.findFirst({
+    where: {
       meeting_id: meeting.id,
-      egress_id: egress.egressId,
-      s3_key: fileName, 
       status: 'recording'
     }
   });
 
-  return recording;
-};
+  if (existingRecording) {
+    throw new Error('Recording already in progress');
+  }
 
+  // ─── 3. Ensure room exists (safe) ──────────────────
+  try {
+    await clientes.roomServiceClient.createRoom({
+      name: meeting.livekit_room_name
+    });
+  } catch (err) {
+    console.log('⚠️ Room already exists or active');
+  }
+
+  // ─── 4. LOCAL file path ────────────────────────────
+  const fileName = `recordings/${meeting.id}/${Date.now()}.mp4`;
+
+  // ensure folder exists
+  const fs = await import('fs');
+  const path = await import('path');
+
+  const dir = path.dirname(fileName);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  // ─── 5. Egress Output (LOCAL ONLY) ─────────────────
+  const output = new EncodedFileOutput({
+    filepath: fileName
+  });
+
+  let egressInfo;
+
+  try {
+    egressInfo = await clientes.egressClient.startRoomCompositeEgress(
+      meeting.livekit_room_name,
+      output   // ✅ LOCAL MODE (no S3)
+    );
+  } catch (err) {
+    throw new Error(
+      `Failed to start egress: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
+
+  if (!egressInfo?.egressId) {
+    throw new Error('Egress failed to start properly');
+  }
+
+  // ─── 6. DB Save ────────────────────────────────────
+  return await prisma.recording.create({
+    data: {
+      meeting_id: meeting.id,
+      egress_id: egressInfo.egressId,
+      file_path: fileName,
+      status: 'recording'
+    }
+  });
+};
 const stopRecording = async (code: string, currentUserId: string) => {
   const meeting = await prisma.meeting.findUnique({
     where: { join_code: code }

@@ -22,6 +22,7 @@ app.get('/', (req,res)=>{
 app.use("/api/v1/auth", AuthRoutes);
 app.use("/api/v1/meetings", MeetingsRoutes);
 app.use("/api/v1/screen-share",ScreenShareRoutes)
+app.use('/recordings', express.static('recordings'));
 app.use("/api/v1/recordings", RecordingRoutes);
 
 // Global Error Handler and Not FOund Middleware
