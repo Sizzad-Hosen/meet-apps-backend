@@ -79,7 +79,7 @@ model Meeting {
   created_at          DateTime             @default(now())
   meetingParticipants MeetingParticipant[]
   screenShares        ScreenShare[]
-
+recordings Recording[]
   @@map("meetings")
 }
 
@@ -126,4 +126,27 @@ model ScreenShare {
   @@index([meeting_id])
   @@index([user_id])
   @@map("screenShare")
+}
+
+model Recording {
+  id               String          @id @default(uuid()) @db.Uuid
+  meeting_id       String          @db.Uuid
+  egress_id        String
+  s3_key           String
+  transcript_url   String?         // ✅ optional
+  status           RecordingStatus @default(recording)
+  duration_seconds String?         // ✅ optional
+  started_at       DateTime        @default(now())
+  ended_at         DateTime?
+  created_at       DateTime        @default(now())
+
+  meeting Meeting @relation(fields: [meeting_id], references: [id])
+
+  @@map("recordings")
+}
+
+enum RecordingStatus {
+  recording
+  completed
+  failed
 }

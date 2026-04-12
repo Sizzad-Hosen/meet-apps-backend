@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import { AuthRoutes } from "./app/modules/Auth/auth.routes";
 import { MeetingsRoutes } from "./app/modules/Meetings/meetings.routes";
 import { ScreenShareRoutes } from "./app/modules/ScreenShare/screenShare.route";
+import { RecordingRoutes } from "./app/modules/Record/record.routes";
 const app = express();
 
 // middlewares
@@ -21,6 +22,9 @@ app.get('/', (req,res)=>{
 app.use("/api/v1/auth", AuthRoutes);
 app.use("/api/v1/meetings", MeetingsRoutes);
 app.use("/api/v1/screen-share",ScreenShareRoutes)
+app.use("/api/v1/recordings", RecordingRoutes);
+
+// Global Error Handler and Not FOund Middleware
 app.use("*", require("./app/middlewares/notFound").notFound);
 app.use(require("./app/middlewares/globalErrorHandler").globalErrorHandler);
 export default app;
