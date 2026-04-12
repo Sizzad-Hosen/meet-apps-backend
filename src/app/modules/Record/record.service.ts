@@ -1,9 +1,6 @@
-import {  EncodedFileOutput, S3Upload } from 'livekit-server-sdk';
-import {  DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { EncodedFileOutput } from 'livekit-server-sdk';
 import prisma from '../../../lib/prisma';
-import {  clientes } from '../../../helpers/s3';
-
+import { clientes } from '../../../helpers/s3'; 
 
 const startRecording = async (code: string, currentUserId: string) => {
   const meeting = await prisma.meeting.findUnique({
@@ -16,30 +13,22 @@ const startRecording = async (code: string, currentUserId: string) => {
 
   const fileName = `recordings/${meeting.id}/${Date.now()}.mp4`;
 
- 
-const output = new EncodedFileOutput({
-  filepath: fileName,
-  output: {
-    case: 's3',
-    value: new S3Upload({
-      bucket: process.env.AWS_S3_BUCKET!,
-      region: process.env.AWS_REGION!,
-      accessKey: process.env.AWS_ACCESS_KEY_ID!,
-      secret: process.env.AWS_SECRET_ACCESS_KEY!
-    })
-  }
-});
+  const output = new EncodedFileOutput({
+    filepath: fileName
+  });
 
   const egress = await clientes.egressClient.startRoomCompositeEgress(
     meeting.livekit_room_name,
-    { file: output }
+    {
+      file: output
+    }
   );
 
   const recording = await prisma.recording.create({
     data: {
       meeting_id: meeting.id,
       egress_id: egress.egressId,
-      s3_key: fileName,
+      s3_key: fileName, 
       status: 'recording'
     }
   });
@@ -63,12 +52,13 @@ const stopRecording = async (code: string, currentUserId: string) => {
 
   await clientes.egressClient.stopEgress(recording.egress_id);
 
-  const updated = await prisma.recording.update({
+  return await prisma.recording.update({
     where: { id: recording.id },
-    data: { status: 'completed', ended_at: new Date() }
+    data: {
+      status: 'completed',
+      ended_at: new Date()
+    }
   });
-
-  return updated;
 };
 
 const getRecordings = async (meetingId: string, currentUserId: string) => {
@@ -78,12 +68,11 @@ const getRecordings = async (meetingId: string, currentUserId: string) => {
 
   if (!meeting) throw new Error('Meeting not found');
 
-  // participant check
   const participant = await prisma.meetingParticipant.findFirst({
     where: { meeting_id: meetingId, user_id: currentUserId }
   });
 
-  if (!participant) throw new Error('You are not a participant of this meeting');
+  if (!participant) throw new Error('Access denied');
 
   return await prisma.recording.findMany({
     where: { meeting_id: meetingId },
@@ -98,22 +87,19 @@ const getDownloadUrl = async (recordingId: string, currentUserId: string) => {
 
   if (!recording) throw new Error('Recording not found');
 
-  // participant check
   const participant = await prisma.meetingParticipant.findFirst({
     where: { meeting_id: recording.meeting_id, user_id: currentUserId }
   });
 
   if (!participant) throw new Error('Access denied');
 
-  // signed URL generate করো — 1 ঘন্টা valid
-  const command = new GetObjectCommand({
-    Bucket: process.env.AWS_S3_BUCKET!,
-    Key: recording.s3_key
-  });
+  // ✅ LOCAL FILE URL
+  const url = `http://localhost:5000/${recording.s3_key}`;
 
-  const signedUrl = await getSignedUrl(clientes.s3Client, command, { expiresIn: 3600 });
-
-  return { url: signedUrl, expires_in: 3600 };
+  return {
+    url,
+    expires_in: null
+  };
 };
 
 const deleteRecording = async (recordingId: string, currentUserId: string) => {
@@ -128,15 +114,14 @@ const deleteRecording = async (recordingId: string, currentUserId: string) => {
   });
 
   if (!meeting) throw new Error('Meeting not found');
-  if (meeting.host_id !== currentUserId) throw new Error('Only host can delete recording');
+  if (meeting.host_id !== currentUserId) throw new Error('Only host can delete');
 
-  // S3 থেকে delete করো
-  await clientes.s3Client.send(new DeleteObjectCommand({
-    Bucket: process.env.AWS_S3_BUCKET!,
-    Key: recording.s3_key
-  }));
+  // ✅ delete from local storage
+  const fs = await import('fs');
+  if (fs.existsSync(recording.s3_key)) {
+    fs.unlinkSync(recording.s3_key);
+  }
 
-  // DB থেকে delete করো
   return await prisma.recording.delete({
     where: { id: recordingId }
   });
