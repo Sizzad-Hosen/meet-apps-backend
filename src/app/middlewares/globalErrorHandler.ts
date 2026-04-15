@@ -16,7 +16,7 @@ export const globalErrorHandler = async (
 
 
   // ✅ Defaults
-  let statusCode = status.INTERNAL_SERVER_ERROR;
+  let statusCode: number = status.INTERNAL_SERVER_ERROR;
   let message    = "Something went wrong";
   let errorSources: TErrorSources[] = [];
   let stack: string | undefined;
@@ -24,7 +24,7 @@ export const globalErrorHandler = async (
   // ✅ Zod validation error
   if (err instanceof z.ZodError) {
     const simplified = handleZodError(err);
-    statusCode   = simplified.statusCode;
+    statusCode   = simplified.statusCode ?? status.BAD_REQUEST;
     message      = simplified.message;
     errorSources = simplified.errorSources;
     stack        = err.stack;
@@ -58,12 +58,14 @@ export const globalErrorHandler = async (
 
   const isDev = config.env === "development";
 
-  const errorResponse: TErrorResponse = {
+  const errorResponse: TErrorResponse & { data?: { errors: TErrorSources[] } } = {
     success:      false,
     message,
     errorSources,
+    data: {
+      errors: errorSources,
+    },
     ...(isDev && { stack }),
-    ...(isDev && { error: err }),
   };
 
   res.status(statusCode).json(errorResponse);

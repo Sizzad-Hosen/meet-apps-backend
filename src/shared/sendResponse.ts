@@ -14,12 +14,11 @@ interface IApiResponse<T> {
 }
 
 export const sendResponse = <T>(res: Response, data: IApiResponse<T>): void => {
-  const responseData: IApiResponse<T> = {
-    statusCode: data.statusCode,
+  const responseData = {
     success: data.success,
     message: data.message || "",
-    data: data.data,
-    meta: data.meta,
+    ...(data.data !== undefined ? { data: data.data } : {}),
+    ...(data.meta ? { meta: data.meta } : {}),
   };
 
   res.status(data.statusCode).json(responseData);

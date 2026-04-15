@@ -1,13 +1,15 @@
 import { auth } from "../../middlewares/auth";
 import { ScreenShareControllers } from "./screenShare.controller";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { ScreenShareValidation } from "./screenShare.validation";
 
 
 const router = require("express").Router();
 
-router.get("/:code/screenshare/status",           auth(), ScreenShareControllers.getScreenShareStatus);
-router.post("/:code/screenshare/start",           auth(), ScreenShareControllers.startScreenShare);
-router.post("/:code/screenshare/stop",            auth(), ScreenShareControllers.stopScreenShare);
-router.post("/:code/screenshare/approve/:userId", auth(), ScreenShareControllers.approveScreenShare);
-router.post("/:code/screenshare/deny/:userId",    auth(), ScreenShareControllers.denyScreenShare);
+router.get("/:code/screenshare/status", validateRequest(ScreenShareValidation.codeOnlySchema), auth(), ScreenShareControllers.getScreenShareStatus);
+router.post("/:code/screenshare/start", validateRequest(ScreenShareValidation.codeOnlySchema), auth(), ScreenShareControllers.startScreenShare);
+router.post("/:code/screenshare/stop", validateRequest(ScreenShareValidation.codeOnlySchema), auth(), ScreenShareControllers.stopScreenShare);
+router.post("/:code/screenshare/approve/:userId", validateRequest(ScreenShareValidation.userActionSchema), auth(), ScreenShareControllers.approveScreenShare);
+router.post("/:code/screenshare/deny/:userId", validateRequest(ScreenShareValidation.userActionSchema), auth(), ScreenShareControllers.denyScreenShare);
 
 export const ScreenShareRoutes = router;
