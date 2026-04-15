@@ -46,6 +46,7 @@ const stopScreenShare = async (code: string, currentUserId: string) => {
     data: { is_screen_sharing: false }
   });
 };
+
 const getScreenShareStatus = async (code: string, currentUserId: string) => {
   const meeting = await prisma.meeting.findUnique({
     where: { join_code: code }
@@ -138,3 +139,5 @@ export const ScreenShareServices = {
   denyScreenShare,
   getScreenShareStatus
 };
+
+// code generrate , code review , code api test , code quality test , performance test 
