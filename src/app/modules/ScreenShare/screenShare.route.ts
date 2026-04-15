@@ -4,6 +4,7 @@ import { ScreenShareControllers } from "./screenShare.controller";
 
 const router = require("express").Router();
 
+router.get("/:code/screenshare/status",           auth(), ScreenShareControllers.getScreenShareStatus);
 router.post("/:code/screenshare/start",           auth(), ScreenShareControllers.startScreenShare);
 router.post("/:code/screenshare/stop",            auth(), ScreenShareControllers.stopScreenShare);
 router.post("/:code/screenshare/approve/:userId", auth(), ScreenShareControllers.approveScreenShare);
