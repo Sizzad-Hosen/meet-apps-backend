@@ -1,21 +1,28 @@
-import {  EncodedFileOutput, EncodedFileType, RoomCompositeOptions, RoomServiceClient } from 'livekit-server-sdk';
-
+import { EncodedFileOutput } from 'livekit-server-sdk';
+import { StatusCodes } from 'http-status-codes';
 import prisma from '../../../lib/prisma';
 import { clientes } from '../../../helpers/s3';
+import ApiError from '../../errors/ApiError';
 
-export const startRecording = async (code: string, currentUserId: string) => {
-  // ─── 1. Meeting Fetch ─────────────────────────────
+const getMeetingByCode = async (code: string) => {
   const meeting = await prisma.meeting.findUnique({
     where: { join_code: code }
   });
 
-  if (!meeting) throw new Error('Meeting not found');
-
-  if (meeting.host_id !== currentUserId) {
-    throw new Error('Only host can start recording');
+  if (!meeting) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Meeting not found');
   }
 
-  // ─── 2. Duplicate Recording Check ──────────────────
+  return meeting;
+};
+
+export const startRecording = async (code: string, currentUserId: string) => {
+  const meeting = await getMeetingByCode(code);
+
+  if (meeting.host_id !== currentUserId) {
+    throw new ApiError(StatusCodes.FORBIDDEN, 'Only host can start recording');
+  }
+
   const existingRecording = await prisma.recording.findFirst({
     where: {
       meeting_id: meeting.id,
@@ -24,85 +31,101 @@ export const startRecording = async (code: string, currentUserId: string) => {
   });
 
   if (existingRecording) {
-    throw new Error('Recording already in progress');
+    throw new ApiError(StatusCodes.CONFLICT, 'Recording already in progress');
   }
 
-  // ─── 3. Ensure room exists (safe) ──────────────────
+  const admittedCount = await prisma.meetingParticipant.count({
+    where: {
+      meeting_id: meeting.id,
+      status: 'admitted',
+      left_at: null
+    }
+  });
+
+  if (admittedCount === 0) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Cannot start recording without any admitted participants');
+  }
+
   try {
     await clientes.roomServiceClient.createRoom({
-      name: meeting.livekit_room_name
+      name: meeting.livekit_room_name,
+      maxParticipants: meeting.max_participants
     });
-  } catch (err) {
-    console.log('⚠️ Room already exists or active');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.toLowerCase().includes('already exists')) {
+      throw error;
+    }
   }
 
-  // ─── 4. LOCAL file path ────────────────────────────
-  const fileName = `recordings/${meeting.id}/${Date.now()}.mp4`;
-
-  // ensure folder exists
   const fs = await import('fs');
   const path = await import('path');
+  const filePath = `recordings/${meeting.id}/${Date.now()}.mp4`;
+  const directory = path.dirname(filePath);
 
-  const dir = path.dirname(fileName);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(directory)) {
+    fs.mkdirSync(directory, { recursive: true });
   }
 
-  // ─── 5. Egress Output (LOCAL ONLY) ─────────────────
   const output = new EncodedFileOutput({
-    filepath: fileName
+    filepath: filePath
   });
 
   let egressInfo;
-
   try {
     egressInfo = await clientes.egressClient.startRoomCompositeEgress(
       meeting.livekit_room_name,
-      output   // ✅ LOCAL MODE (no S3)
+      output
     );
-  } catch (err) {
-    throw new Error(
-      `Failed to start egress: ${
-        err instanceof Error ? err.message : String(err)
-      }`
+  } catch (error) {
+    throw new ApiError(
+      StatusCodes.BAD_GATEWAY,
+      `Failed to start recording egress: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 
   if (!egressInfo?.egressId) {
-    throw new Error('Egress failed to start properly');
+    throw new ApiError(StatusCodes.BAD_GATEWAY, 'Egress failed to start properly');
   }
 
-  // ─── 6. DB Save ────────────────────────────────────
-  return await prisma.recording.create({
+  return prisma.recording.create({
     data: {
       meeting_id: meeting.id,
       egress_id: egressInfo.egressId,
-      file_path: fileName,
+      s3_key: filePath,
       status: 'recording'
     }
   });
 };
-const stopRecording = async (code: string, currentUserId: string) => {
-  const meeting = await prisma.meeting.findUnique({
-    where: { join_code: code }
-  });
 
-  if (!meeting) throw new Error('Meeting not found');
-  if (meeting.host_id !== currentUserId) throw new Error('Only host can stop recording');
+const stopRecording = async (code: string, currentUserId: string) => {
+  const meeting = await getMeetingByCode(code);
+
+  if (meeting.host_id !== currentUserId) {
+    throw new ApiError(StatusCodes.FORBIDDEN, 'Only host can stop recording');
+  }
 
   const recording = await prisma.recording.findFirst({
     where: { meeting_id: meeting.id, status: 'recording' }
   });
 
-  if (!recording) throw new Error('No active recording found');
+  if (!recording) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'No active recording found');
+  }
 
   await clientes.egressClient.stopEgress(recording.egress_id);
 
-  return await prisma.recording.update({
+  const durationSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(recording.started_at).getTime()) / 1000)
+  ).toString();
+
+  return prisma.recording.update({
     where: { id: recording.id },
     data: {
       status: 'completed',
-      ended_at: new Date()
+      ended_at: new Date(),
+      duration_seconds: durationSeconds
     }
   });
 };
@@ -112,15 +135,19 @@ const getRecordings = async (meetingId: string, currentUserId: string) => {
     where: { id: meetingId }
   });
 
-  if (!meeting) throw new Error('Meeting not found');
+  if (!meeting) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Meeting not found');
+  }
 
   const participant = await prisma.meetingParticipant.findFirst({
     where: { meeting_id: meetingId, user_id: currentUserId }
   });
 
-  if (!participant) throw new Error('Access denied');
+  if (!participant) {
+    throw new ApiError(StatusCodes.FORBIDDEN, 'Access denied');
+  }
 
-  return await prisma.recording.findMany({
+  return prisma.recording.findMany({
     where: { meeting_id: meetingId },
     orderBy: { created_at: 'desc' }
   });
@@ -131,19 +158,23 @@ const getDownloadUrl = async (recordingId: string, currentUserId: string) => {
     where: { id: recordingId }
   });
 
-  if (!recording) throw new Error('Recording not found');
+  if (!recording) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Recording not found');
+  }
 
   const participant = await prisma.meetingParticipant.findFirst({
     where: { meeting_id: recording.meeting_id, user_id: currentUserId }
   });
 
-  if (!participant) throw new Error('Access denied');
+  if (!participant) {
+    throw new ApiError(StatusCodes.FORBIDDEN, 'Access denied');
+  }
 
-  // ✅ LOCAL FILE URL
-  const url = `http://localhost:5000/${recording.s3_key}`;
+  const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
 
   return {
-    url,
+    url: `${baseUrl}/${recording.s3_key.replace(/\\/g, '/')}`,
+    path: recording.s3_key,
     expires_in: null
   };
 };
@@ -153,22 +184,28 @@ const deleteRecording = async (recordingId: string, currentUserId: string) => {
     where: { id: recordingId }
   });
 
-  if (!recording) throw new Error('Recording not found');
+  if (!recording) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Recording not found');
+  }
 
   const meeting = await prisma.meeting.findUnique({
     where: { id: recording.meeting_id }
   });
 
-  if (!meeting) throw new Error('Meeting not found');
-  if (meeting.host_id !== currentUserId) throw new Error('Only host can delete');
+  if (!meeting) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Meeting not found');
+  }
 
-  // ✅ delete from local storage
+  if (meeting.host_id !== currentUserId) {
+    throw new ApiError(StatusCodes.FORBIDDEN, 'Only host can delete');
+  }
+
   const fs = await import('fs');
-  if (fs.existsSync(recording.s3_key)) {
+  if (recording.s3_key && fs.existsSync(recording.s3_key)) {
     fs.unlinkSync(recording.s3_key);
   }
 
-  return await prisma.recording.delete({
+  return prisma.recording.delete({
     where: { id: recordingId }
   });
 };

@@ -1,13 +1,15 @@
 import { auth } from '../../middlewares/auth';
+import { validateRequest } from '../../middlewares/validateRequest';
 import { RecordingControllers } from './record.controller';
+import { RecordValidation } from './record.validation';
 
 const router = require('express').Router();
 
-router.post('/:code/start', auth(), RecordingControllers.startRecording);
-router.post('/:code/stop',  auth(), RecordingControllers.stopRecording);
+router.post('/:code/start', validateRequest(RecordValidation.codeOnlySchema), auth(), RecordingControllers.startRecording);
+router.post('/:code/stop', validateRequest(RecordValidation.codeOnlySchema), auth(), RecordingControllers.stopRecording);
 
-router.get('/:meetingId',          auth(), RecordingControllers.getRecordings);
-router.get('/:id/download',        auth(), RecordingControllers.getDownloadUrl);
-router.delete('/:id',              auth(), RecordingControllers.deleteRecording);
+router.get('/:meetingId', validateRequest(RecordValidation.meetingIdSchema), auth(), RecordingControllers.getRecordings);
+router.get('/:id/download', validateRequest(RecordValidation.recordingIdSchema), auth(), RecordingControllers.getDownloadUrl);
+router.delete('/:id', validateRequest(RecordValidation.recordingIdSchema), auth(), RecordingControllers.deleteRecording);
 
 export const RecordingRoutes = router;

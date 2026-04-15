@@ -5,11 +5,13 @@ import { AuthRoutes } from "./app/modules/Auth/auth.routes";
 import { MeetingsRoutes } from "./app/modules/Meetings/meetings.routes";
 import { ScreenShareRoutes } from "./app/modules/ScreenShare/screenShare.route";
 import { RecordingRoutes } from "./app/modules/Record/record.routes";
+import { LiveKitRoutes } from "./app/modules/LiveKit/livekit.routes";
 const app = express();
 
 // middlewares
 app.use(cors());
 app.use(cookieParser());
+app.use("/api/v1/livekit", LiveKitRoutes);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
