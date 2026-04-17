@@ -1,20 +1,40 @@
 import { NextFunction, Request, Response } from "express";
 import z from "zod";
 
-export const validateRequest = (zodSchema: z.ZodObject<any>) => {
+export const validateRequest = (zodSchema: z.ZodTypeAny) => {
     return (req: Request, res: Response, next: NextFunction) => {
-        if(req.body.data){
-            req.body = JSON.parse(req.body.data)
+        if (req.body?.data && typeof req.body.data === "string") {
+            try {
+                req.body = JSON.parse(req.body.data);
+            } catch (error) {
+                if (error instanceof SyntaxError) {
+                    return res.status(400).json({ success: false, message: 'Invalid JSON in request body' });
+                }
+                throw error;
+            }
         }
 
-        const parsedResult = zodSchema.safeParse(req.body)
+        const parsedResult = zodSchema.safeParse({
+            body: req.body,
+            params: req.params,
+            query: req.query,
+        });
 
         if (!parsedResult.success) {
-            next(parsedResult.error)
+            return next(parsedResult.error)
         }
 
-        //sanitizing the data
-        req.body = parsedResult.data;
+        if (parsedResult.data?.body !== undefined) {
+            req.body = parsedResult.data.body;
+        }
+
+        if (parsedResult.data?.params !== undefined) {
+            req.params = parsedResult.data.params;
+        }
+
+        if (parsedResult.data?.query !== undefined) {
+            req.query = parsedResult.data.query;
+        }
 
         next();
     }
