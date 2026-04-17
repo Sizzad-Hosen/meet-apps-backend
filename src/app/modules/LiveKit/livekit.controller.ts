@@ -34,9 +34,31 @@ const issueToken = catchAsync(async (req: Request, res: Response) => {
 });
 
 const handleWebhook = catchAsync(async (req: Request, res: Response) => {
-  const rawBody = req.body as Buffer;
   const authHeader = req.header("Authorization");
-  const event = await clientes.webhookReceiver.receive(rawBody.toString("utf8"), authHeader);
+  if (!authHeader) {
+    return sendResponse(res, {
+      statusCode: StatusCodes.BAD_REQUEST,
+      success: false,
+      message: "Authorization header is required",
+    });
+  }
+
+  const rawBody = req.body;
+  if (!rawBody) {
+    return sendResponse(res, {
+      statusCode: StatusCodes.BAD_REQUEST,
+      success: false,
+      message: "Webhook body is required",
+    });
+  }
+
+  const bodyAsString = Buffer.isBuffer(rawBody)
+    ? rawBody.toString("utf8")
+    : typeof rawBody === "string"
+      ? rawBody
+      : JSON.stringify(rawBody);
+
+  const event = await clientes.webhookReceiver.receive(bodyAsString, authHeader);
   const result = await MeetingServices.handleWebhookEvent(event);
 
   sendResponse(res, {
