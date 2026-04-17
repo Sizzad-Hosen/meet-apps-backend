@@ -46,6 +46,10 @@ export const ensureHost = async (meetingId: string, userId: string) => {
 export const ensureModerator = async (meetingId: string, userId: string) => {
     const participant = await getParticipantOrThrow(meetingId, userId);
 
+    if (participant.status !== ParticipantStatus.admitted) {
+        throw new ApiError(StatusCodes.FORBIDDEN, "Participant is not allowed to perform this action");
+    }
+
     if (participant.role !== ParticipantRole.host && participant.role !== ParticipantRole.cohost) {
         throw new ApiError(StatusCodes.FORBIDDEN, "Only host or cohost can perform this action");
     }
