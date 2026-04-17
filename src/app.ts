@@ -21,7 +21,6 @@ app.use(cors({
   credentials: true,
 }));
 app.use(cookieParser());
-app.use("/api/v1/livekit", LiveKitRoutes);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(apiRateLimiter);
@@ -43,6 +42,7 @@ app.use("/api/v1/auth", AuthRoutes);
 app.use("/api/v1/meetings", MeetingsRoutes);
 app.use("/api/v1/screen-share", ScreenShareRoutes);
 app.use("/api/v1/recordings", RecordingRoutes);
+app.use("/api/v1/livekit", LiveKitRoutes);
 
 // Global Error Handler and Not FOund Middleware
 app.use("*", require("./app/middlewares/notFound").notFound);
