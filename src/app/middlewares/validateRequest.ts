@@ -4,7 +4,14 @@ import z from "zod";
 export const validateRequest = (zodSchema: z.ZodTypeAny) => {
     return (req: Request, res: Response, next: NextFunction) => {
         if (req.body?.data && typeof req.body.data === "string") {
-            req.body = JSON.parse(req.body.data)
+            try {
+                req.body = JSON.parse(req.body.data);
+            } catch (error) {
+                if (error instanceof SyntaxError) {
+                    return res.status(400).json({ success: false, message: 'Invalid JSON in request body' });
+                }
+                throw error;
+            }
         }
 
         const parsedResult = zodSchema.safeParse({

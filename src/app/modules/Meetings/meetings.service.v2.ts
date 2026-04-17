@@ -486,8 +486,17 @@ const muteAll = async (code: string, currentUserId: string) => {
   return { muted: true };
 };
 
-const getParticipants = async (code: string) => {
+const getParticipants = async (code: string, callerId: string) => {
   const meeting = await getMeetingByCodeOrThrow(code);
+
+  // Check if caller is a participant
+  const callerParticipant = await prisma.meetingParticipant.findFirst({
+    where: { meeting_id: meeting.id, user_id: callerId }
+  });
+
+  if (!callerParticipant) {
+    throw new ApiError(StatusCodes.FORBIDDEN, 'Access denied');
+  }
 
   return prisma.meetingParticipant.findMany({
     where: { meeting_id: meeting.id },

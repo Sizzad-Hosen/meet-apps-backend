@@ -6,7 +6,7 @@ import { LiveKitValidation } from "./livekit.validation";
 
 const router = express.Router();
 
-router.post("/webhook", express.text({ type: "*/*" }), LiveKitControllers.handleWebhook);
+router.post("/webhook", express.raw({ type: 'application/json' }), LiveKitControllers.handleWebhook);
 router.post("/token", express.json(), auth(), validateRequest(LiveKitValidation.tokenSchema), LiveKitControllers.issueToken);
 
 export const LiveKitRoutes = router;

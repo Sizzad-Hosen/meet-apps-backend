@@ -14,7 +14,14 @@ const createBreakoutSchema = z.object({
         rooms: z.array(z.object({
             name: z.string().trim().min(1).max(100).optional(),
             participantIds: z.array(z.string().uuid()).optional(),
-        })).optional(),
+        }).superRefine((room, ctx) => {
+            if (!room.name && (!room.participantIds || room.participantIds.length === 0)) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: "Room must have either a name or at least one participant",
+                });
+            }
+        })).min(1).optional(),
     }).optional(),
 });
 
@@ -30,7 +37,7 @@ const broadcastBreakoutSchema = z.object({
         code: z.string().trim().min(4).max(12),
     }),
     body: z.object({
-        message: z.string().trim().min(1),
+        message: z.string().trim().min(1).max(1000),
     }),
 });
 

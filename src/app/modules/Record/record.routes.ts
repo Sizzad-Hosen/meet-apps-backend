@@ -9,7 +9,7 @@ router.post('/:code/start', validateRequest(RecordValidation.codeOnlySchema), au
 router.post('/:code/stop', validateRequest(RecordValidation.codeOnlySchema), auth(), RecordingControllers.stopRecording);
 
 router.get('/:meetingId', validateRequest(RecordValidation.meetingIdSchema), auth(), RecordingControllers.getRecordings);
-router.get('/:id/download', validateRequest(RecordValidation.recordingIdSchema), auth(), RecordingControllers.getDownloadUrl);
-router.delete('/:id', validateRequest(RecordValidation.recordingIdSchema), auth(), RecordingControllers.deleteRecording);
+router.get('/:recordingId/download', validateRequest(RecordValidation.recordingIdSchema), auth(), RecordingControllers.downloadRecording);
+router.delete('/:recordingId', validateRequest(RecordValidation.recordingIdSchema), auth(), RecordingControllers.deleteRecording);
 
 export const RecordingRoutes = router;

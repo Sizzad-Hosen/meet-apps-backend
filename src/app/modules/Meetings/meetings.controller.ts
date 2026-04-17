@@ -3,8 +3,15 @@ import { StatusCodes } from "http-status-codes";
 import { catchAsync } from "../../../shared/catchAsync";
 import { sendResponse } from "../../../shared/sendResponse";
 import { MeetingServices } from "./meetings.service.v2";
+import ApiError from "../../errors/ApiError";
 
-const requireUserId = (req: Request) => req.user?.userId || "";
+const requireUserId = (req: Request) => {
+  const userId = req.user?.userId;
+  if (!userId) {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, 'Authentication required');
+  }
+  return userId;
+};
 
 const createMeeting = catchAsync(async (req: Request, res: Response) => {
   const result = await MeetingServices.createMeetings(req.body, requireUserId(req));
@@ -128,7 +135,7 @@ const muteAll = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getParticipants = catchAsync(async (req: Request, res: Response) => {
-  const result = await MeetingServices.getParticipants(req.params.code);
+  const result = await MeetingServices.getParticipants(req.params.code, requireUserId(req));
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
