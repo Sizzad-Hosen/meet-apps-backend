@@ -19,3 +19,7 @@ CREATE TABLE "recordings" (
 -- AddForeignKey
 ALTER TABLE "recordings"
 ADD CONSTRAINT "recordings_meeting_id_fkey" FOREIGN KEY ("meeting_id") REFERENCES "meetings" ("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+CREATE INDEX "recordings_meeting_id_idx" ON "recordings"("meeting_id");
+CREATE INDEX "recordings_egress_id_idx" ON "recordings"("egress_id");
+CREATE INDEX "recordings_status_idx" ON "recordings"("status");

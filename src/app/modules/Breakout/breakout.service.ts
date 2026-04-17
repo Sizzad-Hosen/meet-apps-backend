@@ -7,6 +7,13 @@ import { ensureHost, getMeetingByCodeOrThrow, getParticipantOrThrow } from "../M
 const createBreakoutRooms = async (code: string, payload: any, currentUserId: string) => {
     const meeting = await getMeetingByCodeOrThrow(code);
     await ensureHost(meeting.id, currentUserId);
+    const existingOpenRooms = await prisma.breakoutRoom.findMany({
+        where: { meeting_id: meeting.id, status: BreakoutRoomStatus.open },
+        select: { id: true },
+    });
+    if (existingOpenRooms.length > 0) {
+        throw new ApiError(StatusCodes.CONFLICT, "Open breakout rooms already exist for this meeting");
+    }
 
     const admittedParticipants = await prisma.meetingParticipant.findMany({
         where: {
@@ -27,52 +34,55 @@ const createBreakoutRooms = async (code: string, payload: any, currentUserId: st
         }))
         : [{ name: "Room 1", participantIds: [] }, { name: "Room 2", participantIds: [] }];
 
-    const rooms = await Promise.all(
-        roomsPayload.map((room: any) => prisma.breakoutRoom.create({
-            data: {
-                meeting_id: meeting.id,
-                name: room.name,
-            },
-        }))
-    );
+    return prisma.$transaction(async (tx) => {
+        const rooms = await Promise.all(
+            roomsPayload.map((room: any) => tx.breakoutRoom.create({
+                data: {
+                    meeting_id: meeting.id,
+                    name: room.name,
+                },
+            }))
+        );
 
-    const participantsToAssign = admittedParticipants.filter((participant) => participant.user_id !== meeting.host_id);
-    const assignments: Array<{ participantId: string; roomId: string }> = [];
+        const participantsToAssign = admittedParticipants.filter((participant) => participant.user_id !== meeting.host_id);
+        const assignments: Array<{ participantId: string; roomId: string }> = [];
 
-    if (roomsPayload.some((room: any) => room.participantIds.length > 0)) {
-        for (let i = 0; i < roomsPayload.length; i++) {
-            const roomPayload = roomsPayload[i];
-            const room = rooms[i];
-            if (!room) continue;
+        if (roomsPayload.some((room: any) => room.participantIds.length > 0)) {
+            for (let i = 0; i < roomsPayload.length; i++) {
+                const roomPayload = roomsPayload[i];
+                const room = rooms[i];
+                if (!room) continue;
 
-            const selected = participantsToAssign.filter((participant) => roomPayload.participantIds.includes(participant.user_id));
-            for (const participant of selected) {
-                assignments.push({ participantId: participant.id, roomId: room.id });
+                const selected = participantsToAssign.filter((participant) => roomPayload.participantIds.includes(participant.user_id));
+                for (const participant of selected) {
+                    assignments.push({ participantId: participant.id, roomId: room.id });
+                }
             }
         }
-    }
 
-    const remainingParticipants = participantsToAssign.filter((participant) => !assignments.some((assign) => assign.participantId === participant.id));
-    remainingParticipants.forEach((participant, index) => {
-        const room = rooms[index % rooms.length];
-        assignments.push({ participantId: participant.id, roomId: room.id });
+        const remainingParticipants = participantsToAssign.filter((participant) => !assignments.some((assign) => assign.participantId === participant.id));
+        remainingParticipants.forEach((participant, index) => {
+            const room = rooms[index % rooms.length];
+            assignments.push({ participantId: participant.id, roomId: room.id });
+        });
+
+        await Promise.all(assignments.map((assignment) =>
+            tx.meetingParticipant.update({
+                where: { id: assignment.participantId },
+                data: { breakout_room_id: assignment.roomId },
+            })
+        ));
+
+        return {
+            rooms,
+            assignments,
+        };
     });
-
-    await Promise.all(assignments.map((assignment) =>
-        prisma.meetingParticipant.update({
-            where: { id: assignment.participantId },
-            data: { breakout_room_id: assignment.roomId },
-        })
-    ));
-
-    return {
-        rooms,
-        assignments,
-    };
 };
 
 const listBreakoutRooms = async (code: string, currentUserId: string) => {
     const meeting = await getMeetingByCodeOrThrow(code);
+    const currentParticipant = await getParticipantOrThrow(meeting.id, currentUserId);
 
     const rooms = await prisma.breakoutRoom.findMany({
         where: { meeting_id: meeting.id },
@@ -91,22 +101,19 @@ const listBreakoutRooms = async (code: string, currentUserId: string) => {
         },
     });
 
-    const currentParticipant = await prisma.meetingParticipant.findFirst({
-        where: {
-            meeting_id: meeting.id,
-            user_id: currentUserId,
-        },
-        include: {
-            breakoutRoom: true,
-        },
-    });
+    const breakoutRoom = currentParticipant.breakout_room_id
+        ? await prisma.breakoutRoom.findUnique({
+            where: { id: currentParticipant.breakout_room_id },
+            select: { id: true, name: true },
+        })
+        : null;
 
     return {
         rooms,
-        myAssignment: currentParticipant?.breakoutRoom
+        myAssignment: breakoutRoom
             ? {
-                roomId: currentParticipant.breakoutRoom.id,
-                roomName: currentParticipant.breakoutRoom.name,
+                roomId: breakoutRoom.id,
+                roomName: breakoutRoom.name,
             }
             : null,
     };
