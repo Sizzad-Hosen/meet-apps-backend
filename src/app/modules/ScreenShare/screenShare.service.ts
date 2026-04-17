@@ -38,11 +38,6 @@ const startScreenShare = async (code: string, currentUserId: string) => {
     throw new ApiError(StatusCodes.BAD_REQUEST, 'Screenshare is disabled');
   }
 
-  const activeShare = await getActiveShare(meeting.id);
-  if (activeShare && activeShare.user_id !== currentUserId) {
-    throw new ApiError(StatusCodes.CONFLICT, 'Another participant is already sharing their screen');
-  }
-
   if (meeting.screenshare_needs_approval && participant.role === 'guest') {
     await prisma.meetingParticipant.update({
       where: { id: participant.id },
@@ -51,32 +46,41 @@ const startScreenShare = async (code: string, currentUserId: string) => {
 
     return {
       status: 'pending_approval',
-      activeShare
+      activeShare: await getActiveShare(meeting.id)
     };
   }
 
-  await prisma.screenShare.upsert({
-    where: {
-      meeting_id_user_id: {
+  return prisma.$transaction(async (tx) => {
+    const activeShare = await tx.screenShare.findFirst({
+      where: { meeting_id: meeting.id },
+    });
+    if (activeShare && activeShare.user_id !== currentUserId) {
+      throw new ApiError(StatusCodes.CONFLICT, 'Another participant is already sharing their screen');
+    }
+
+    await tx.screenShare.upsert({
+      where: {
+        meeting_id_user_id: {
+          meeting_id: meeting.id,
+          user_id: currentUserId
+        }
+      },
+      update: {},
+      create: {
         meeting_id: meeting.id,
         user_id: currentUserId
       }
-    },
-    update: {},
-    create: {
-      meeting_id: meeting.id,
-      user_id: currentUserId
-    }
-  });
+    });
 
-  await prisma.meetingParticipant.updateMany({
-    where: { meeting_id: meeting.id },
-    data: { is_screen_sharing: false }
-  });
+    await tx.meetingParticipant.updateMany({
+      where: { meeting_id: meeting.id },
+      data: { is_screen_sharing: false }
+    });
 
-  return prisma.meetingParticipant.update({
-    where: { id: participant.id },
-    data: { is_screen_sharing: true }
+    return tx.meetingParticipant.update({
+      where: { id: participant.id },
+      data: { is_screen_sharing: true }
+    });
   });
 };
 
@@ -135,33 +139,37 @@ const approveScreenShare = async (code: string, targetUserId: string, currentUse
     throw new ApiError(StatusCodes.NOT_FOUND, 'Participant not found');
   }
 
-  const activeShare = await getActiveShare(meeting.id);
-  if (activeShare && activeShare.user_id !== targetUserId) {
-    throw new ApiError(StatusCodes.CONFLICT, 'Another participant is already sharing their screen');
-  }
+  return prisma.$transaction(async (tx) => {
+    const activeShare = await tx.screenShare.findFirst({
+      where: { meeting_id: meeting.id },
+    });
+    if (activeShare && activeShare.user_id !== targetUserId) {
+      throw new ApiError(StatusCodes.CONFLICT, 'Another participant is already sharing their screen');
+    }
 
-  await prisma.screenShare.upsert({
-    where: {
-      meeting_id_user_id: {
+    await tx.screenShare.upsert({
+      where: {
+        meeting_id_user_id: {
+          meeting_id: meeting.id,
+          user_id: targetUserId
+        }
+      },
+      update: {},
+      create: {
         meeting_id: meeting.id,
         user_id: targetUserId
       }
-    },
-    update: {},
-    create: {
-      meeting_id: meeting.id,
-      user_id: targetUserId
-    }
-  });
+    });
 
-  await prisma.meetingParticipant.updateMany({
-    where: { meeting_id: meeting.id },
-    data: { is_screen_sharing: false }
-  });
+    await tx.meetingParticipant.updateMany({
+      where: { meeting_id: meeting.id },
+      data: { is_screen_sharing: false }
+    });
 
-  return prisma.meetingParticipant.update({
-    where: { id: participant.id },
-    data: { is_screen_sharing: true }
+    return tx.meetingParticipant.update({
+      where: { id: participant.id },
+      data: { is_screen_sharing: true }
+    });
   });
 };
 

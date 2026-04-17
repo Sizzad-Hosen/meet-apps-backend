@@ -2,7 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const jwt = require('jsonwebtoken');
 
-process.env.JWT_SECRET = 'test-secret';
+process.env.JWT_SECRET = 'test-secret-key-for-suite-1234567890';
+process.env.REFRESH_TOKEN_SECRET = 'refresh-secret-key-for-suite-123456';
 process.env.LIVEKIT_API_KEY = 'lk_test_key';
 process.env.LIVEKIT_API_SECRET = 'lk_test_secret';
 process.env.LIVEKIT_URL = 'http://localhost:7880';
@@ -10,7 +11,7 @@ process.env.PORT = '5000';
 process.env.APP_BASE_URL = 'http://localhost:5000';
 
 const prisma = require('../../dist/src/lib/prisma').default;
-const { clientes } = require('../../dist/src/helpers/s3');
+const { clientes } = require('../../dist/src/helpers/livekitClients');
 const app = require('../../dist/src/app').default;
 
 const hostUser = {
@@ -163,12 +164,18 @@ prisma.meeting.create = async ({ data }) => {
 
 prisma.meeting.update = async ({ where, data }) => {
   const meeting = state.meetings.find((candidate) => candidate.id === where.id || candidate.join_code === where.join_code);
+  if (!meeting) {
+    throw new Error('Meeting not found for update');
+  }
   Object.assign(meeting, data);
   return clone(meeting);
 };
 
 prisma.meeting.delete = async ({ where }) => {
   const index = state.meetings.findIndex((candidate) => candidate.id === where.id || candidate.join_code === where.join_code);
+  if (index === -1) {
+    return null;
+  }
   const [deleted] = state.meetings.splice(index, 1);
   return clone(deleted);
 };
@@ -231,6 +238,9 @@ prisma.meetingParticipant.create = async ({ data }) => {
 
 prisma.meetingParticipant.update = async ({ where, data }) => {
   const participant = state.participants.find((candidate) => candidate.id === where.id);
+  if (!participant) {
+    throw new Error('Meeting participant not found for update');
+  }
   Object.assign(participant, data);
   return clone(participant);
 };
@@ -350,17 +360,25 @@ prisma.recording.create = async ({ data }) => {
 
 prisma.recording.update = async ({ where, data }) => {
   const recording = state.recordings.find((candidate) => candidate.id === where.id);
+  if (!recording) {
+    throw new Error('Recording not found for update');
+  }
   Object.assign(recording, data);
   return clone(recording);
 };
 
 prisma.recording.deleteMany = async ({ where } = {}) => {
+  const originalLength = state.recordings.length;
   state.recordings = state.recordings.filter((recording) => !matchesWhere(recording, where));
-  return { count: 0 };
+  const deletedCount = originalLength - state.recordings.length;
+  return { count: deletedCount };
 };
 
 prisma.recording.delete = async ({ where }) => {
   const index = state.recordings.findIndex((candidate) => candidate.id === where.id);
+  if (index === -1) {
+    return null;
+  }
   const [deleted] = state.recordings.splice(index, 1);
   return clone(deleted);
 };
@@ -514,6 +532,9 @@ prisma.poll.create = async ({ data }) => {
 
 prisma.poll.update = async ({ where, data }) => {
   const poll = state.polls.find((candidate) => candidate.id === where.id);
+  if (!poll) {
+    throw new Error('Poll not found for update');
+  }
   Object.assign(poll, data);
   return clone(poll);
 };
@@ -541,6 +562,9 @@ prisma.pollVote.create = async ({ data }) => {
 
 prisma.pollVote.update = async ({ where, data }) => {
   const vote = state.pollVotes.find((candidate) => candidate.id === where.id);
+  if (!vote) {
+    throw new Error('Poll vote not found for update');
+  }
   Object.assign(vote, data);
   return clone(vote);
 };
@@ -582,6 +606,7 @@ const request = async (server, path, options = {}) => {
 };
 
 test('meeting APIs cover create, join, token, screen share, and recording flow', async () => {
+  resetState();
   const server = app.listen(0);
 
   try {

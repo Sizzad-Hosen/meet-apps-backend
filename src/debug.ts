@@ -1,4 +1,4 @@
-// debug-egress.ts
+// src/debug.ts
 import * as LiveKit from 'livekit-server-sdk';
 import dotenv from 'dotenv';
 dotenv.config();

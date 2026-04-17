@@ -184,6 +184,7 @@ model BreakoutRoom {
 
   @@map("breakout_rooms")
   @@index([meeting_id, status])
+  @@unique([id, meeting_id])
 }
 
 model BreakoutMessage {
@@ -195,7 +196,7 @@ model BreakoutMessage {
   created_at       DateTime @default(now())
 
   meeting      Meeting       @relation(fields: [meeting_id], references: [id])
-  breakoutRoom BreakoutRoom? @relation(fields: [breakout_room_id], references: [id])
+  breakoutRoom BreakoutRoom? @relation(fields: [breakout_room_id, meeting_id], references: [id, meeting_id])
   sender       User          @relation(fields: [sender_id], references: [id])
 
   @@map("breakout_messages")
@@ -229,6 +230,7 @@ model PollOption {
 
   @@map("poll_options")
   @@index([poll_id])
+  @@unique([id, poll_id])
 }
 
 model PollVote {
@@ -239,7 +241,7 @@ model PollVote {
   created_at DateTime @default(now())
 
   poll   Poll       @relation(fields: [poll_id], references: [id])
-  option PollOption @relation(fields: [option_id], references: [id])
+  option PollOption @relation(fields: [option_id, poll_id], references: [id, poll_id])
   voter  User       @relation(fields: [voter_id], references: [id])
 
   @@unique([poll_id, voter_id])

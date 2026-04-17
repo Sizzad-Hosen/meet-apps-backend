@@ -2,7 +2,7 @@ import { MeetingStatus, ParticipantRole, ParticipantStatus } from "@prisma/clien
 import { StatusCodes } from "http-status-codes";
 import { generateJoinCode } from "../../../helpers/generateJoinCode";
 import { generateLiveKitToken, generateRoomName } from "../../../helpers/livekitToken";
-import { clientes } from "../../../helpers/s3";
+import { clientes } from "../../../helpers/livekitClients";
 import prisma from "../../../lib/prisma";
 import ApiError from "../../errors/ApiError";
 

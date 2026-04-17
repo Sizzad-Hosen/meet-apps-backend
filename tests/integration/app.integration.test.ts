@@ -1,6 +1,7 @@
 process.env.NODE_ENV = "test";
-process.env.JWT_SECRET = "1234567890123456";
-process.env.REFRESH_TOKEN_SECRET = "12345678901234567";
+process.env.JWT_SECRET = "12345678901234567890123456789012";
+process.env.REFRESH_TOKEN_SECRET = "12345678901234567890123456789012";
+process.env.RESET_PASS_TOKEN = "12345678901234567890123456789012";
 process.env.RESET_PASS_URL = "http://localhost:3000/reset-password";
 
 import request from "supertest";

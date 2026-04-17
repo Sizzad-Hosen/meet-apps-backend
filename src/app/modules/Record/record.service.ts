@@ -1,9 +1,9 @@
 import { EncodedFileOutput } from 'livekit-server-sdk';
 import { StatusCodes } from 'http-status-codes';
 import path from 'path';
-import { mkdir } from 'fs/promises';
+import { mkdir, unlink } from 'fs/promises';
 import prisma from '../../../lib/prisma';
-import { clientes } from '../../../helpers/s3';
+import { clientes } from '../../../helpers/livekitClients';
 import ApiError from '../../errors/ApiError';
 
 const getMeetingByCode = async (code: string) => {
@@ -138,7 +138,7 @@ const stopRecording = async (code: string, currentUserId: string) => {
     data: {
       status,
       ended_at: new Date(),
-      ...(typeof durationSeconds === "number" ? { duration_seconds: String(durationSeconds) } : {}),
+      ...(typeof durationSeconds === "number" ? { duration_seconds: durationSeconds } : {}),
     }
   });
 };
@@ -190,7 +190,7 @@ const getDownloadUrl = async (recordingId: string, currentUserId: string) => {
 
   return {
     url: `${baseUrl}/api/v1/recordings/${recordingId}/download`,
-    path: sanitizedPath,
+    path: encodedPath,
     expires_in: null
   };
 };
@@ -237,19 +237,29 @@ const deleteRecording = async (recordingId: string, currentUserId: string) => {
   }
 
   if (recording.status === 'recording') {
-    try {
-      await clientes.egressClient.stopEgress(recording.egress_id);
-    } catch (error) {
-      console.error('Failed to stop egress during deletion:', error);
-      // Still allow deletion? Or throw?
-      // For now, throw to prevent deletion if can't stop
-      throw new ApiError(StatusCodes.CONFLICT, 'Cannot delete active recording; failed to stop egress');
+    const refreshedRecording = await prisma.recording.findUnique({
+      where: { id: recording.id }
+    });
+
+    if (refreshedRecording?.status === 'recording') {
+      try {
+        await clientes.egressClient.stopEgress(refreshedRecording.egress_id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+        const ignorableStopError = message.includes('not found')
+          || message.includes('already')
+          || message.includes('stopped');
+
+        if (!ignorableStopError) {
+          console.error('Failed to stop egress during deletion:', error);
+          throw new ApiError(StatusCodes.CONFLICT, 'Cannot delete active recording; failed to stop egress');
+        }
+      }
     }
   }
 
   if (recording.s3_key) {
     try {
-      const { unlink } = await import('fs/promises');
       await unlink(recording.s3_key);
     } catch (error) {
       console.error('Failed to delete file:', error);

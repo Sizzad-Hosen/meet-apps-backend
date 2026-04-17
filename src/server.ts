@@ -21,22 +21,25 @@ async function main(){
     });
     registerSocketServer(io);
 
-   const exitHandler = () => {
+   const exitHandler = async () => {
         if (server) {
-            server.close(() => {
-                logger.info("Server closed!");
+            await new Promise<void>((resolve) => {
+                server.close(() => {
+                    logger.info("Server closed!");
+                    resolve();
+                });
             });
         }
         process.exit(1);
     };
     process.on('uncaughtException', (error) => {
         logger.error("uncaught_exception", { error });
-        exitHandler();
+        void exitHandler();
     });
 
     process.on('unhandledRejection', (error) => {
         logger.error("unhandled_rejection", { error });
-        exitHandler();
+        void exitHandler();
     });
 
 }

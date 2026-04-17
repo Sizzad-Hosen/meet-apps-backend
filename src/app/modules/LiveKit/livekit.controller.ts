@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { StatusCodes } from "http-status-codes";
 import { catchAsync } from "../../../shared/catchAsync";
-import { clientes } from "../../../helpers/s3";
+import { clientes } from "../../../helpers/livekitClients";
 import { sendResponse } from "../../../shared/sendResponse";
 import { MeetingServices } from "../Meetings/meetings.service.v2";
 
