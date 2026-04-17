@@ -20,6 +20,14 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().optional(),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(120),
+  /** Number of reverse proxies (e.g. load balancer) in front of the app; 0 = disabled */
+  TRUST_PROXY: z.coerce.number().int().min(0).max(32).default(0),
+  /** Express JSON/urlencoded body size cap (e.g. 100kb, 1mb) */
+  JSON_BODY_LIMIT: z.string().default("100kb"),
+  /** Max connections in the shared pg Pool used by Prisma */
+  PG_POOL_MAX: z.coerce.number().int().positive().max(200).default(10),
+  /** Max time to wait for HTTP + Socket.IO close + Prisma disconnect before force exit */
+  SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -48,4 +56,8 @@ export default {
   cors_origins: env.CORS_ORIGINS?.split(",").map((origin) => origin.trim()).filter(Boolean) ?? [],
   rate_limit_window_ms: env.RATE_LIMIT_WINDOW_MS,
   rate_limit_max_requests: env.RATE_LIMIT_MAX_REQUESTS,
+  trust_proxy: env.TRUST_PROXY,
+  json_body_limit: env.JSON_BODY_LIMIT,
+  pg_pool_max: env.PG_POOL_MAX,
+  shutdown_timeout_ms: env.SHUTDOWN_TIMEOUT_MS,
 };

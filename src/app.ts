@@ -11,7 +11,13 @@ import { LiveKitRoutes } from "./app/modules/LiveKit/livekit.routes";
 import config from "./app/config";
 import { apiRateLimiter } from "./app/middlewares/rateLimit";
 import { requestLogger } from "./app/middlewares/requestLogger";
+import prisma from "./lib/prisma";
+
 const app = express();
+
+if (config.trust_proxy > 0) {
+  app.set("trust proxy", config.trust_proxy);
+}
 
 // middlewares
 app.use(helmet());
@@ -21,8 +27,8 @@ app.use(cors({
   credentials: true,
 }));
 app.use(cookieParser());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: config.json_body_limit }));
+app.use(express.urlencoded({ extended: true, limit: config.json_body_limit }));
 app.use(apiRateLimiter);
 app.use(requestLogger);
 
@@ -35,6 +41,21 @@ app.get("/", (_req, res) => {
       uptime: process.uptime(),
     },
   });
+});
+
+/** Liveness: process is up (use for load balancer / orchestrator probes) */
+app.get("/health", (_req, res) => {
+  res.status(200).json({ status: "ok", uptime: process.uptime() });
+});
+
+/** Readiness: can serve traffic (database reachable) */
+app.get("/ready", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({ status: "ready" });
+  } catch {
+    res.status(503).json({ status: "not_ready" });
+  }
 });
 
 // api routes
