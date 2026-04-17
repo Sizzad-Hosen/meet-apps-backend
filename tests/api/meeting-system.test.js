@@ -119,6 +119,13 @@ prisma.user.findUnique = async ({ where }) => {
   return null;
 };
 
+prisma.$transaction = async (arg) => {
+  if (typeof arg === 'function') {
+    return arg(prisma);
+  }
+  return Promise.all(arg);
+};
+
 prisma.meeting.findUnique = async ({ where, include, select } = {}) => {
   const meeting = state.meetings.find((candidate) => (
     (where?.id && candidate.id === where.id) ||
@@ -423,6 +430,23 @@ prisma.breakoutRoom.findFirst = async ({ where, include } = {}) => {
   return clone(result);
 };
 
+prisma.breakoutRoom.findUnique = async ({ where, select } = {}) => {
+  const room = state.breakoutRooms.find((candidate) => candidate.id === where.id) || null;
+  if (!room) {
+    return null;
+  }
+  if (select) {
+    const selected = {};
+    Object.keys(select).forEach((key) => {
+      if (select[key]) {
+        selected[key] = room[key];
+      }
+    });
+    return clone(selected);
+  }
+  return clone(room);
+};
+
 prisma.breakoutRoom.create = async ({ data }) => {
   const room = {
     id: makeId('breakoutRoom', state.breakoutRooms),
@@ -567,6 +591,26 @@ prisma.pollVote.update = async ({ where, data }) => {
   }
   Object.assign(vote, data);
   return clone(vote);
+};
+
+prisma.pollVote.upsert = async ({ where, update, create }) => {
+  const vote = state.pollVotes.find((candidate) => (
+    candidate.poll_id === where.poll_id_voter_id.poll_id &&
+    candidate.voter_id === where.poll_id_voter_id.voter_id
+  ));
+  if (vote) {
+    Object.assign(vote, update);
+    return clone(vote);
+  }
+  const createdVote = {
+    id: makeId('pollVote', state.pollVotes),
+    poll_id: create.poll_id,
+    option_id: create.option_id,
+    voter_id: create.voter_id,
+    created_at: new Date().toISOString(),
+  };
+  state.pollVotes.push(createdVote);
+  return clone(createdVote);
 };
 
 clientes.roomServiceClient.createRoom = async ({ name }) => ({ name });

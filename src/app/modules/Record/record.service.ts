@@ -185,7 +185,10 @@ const getDownloadUrl = async (recordingId: string, currentUserId: string) => {
 
   const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
 
-  const sanitizedPath = path.posix.normalize(recording.s3_key).replace(/^\/+/, '').replace(/^(\.\.\/)+/, '');
+  const sanitizedPath = path.posix
+    .normalize(recording.s3_key ?? "")
+    .replace(/^\/+/, '')
+    .replace(/^(\.\.\/)+/, '');
   const encodedPath = sanitizedPath.split('/').map(encodeURIComponent).join('/');
 
   return {

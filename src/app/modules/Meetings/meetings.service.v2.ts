@@ -140,8 +140,8 @@ const createMeetings = async (payload: any, userId: string) => {
     throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
   }
 
-  let meeting: { id: string; livekit_room_name: string; max_participants: number };
-  let participant: { id: string; user_id: string; role: ParticipantRole };
+  let meeting: { id: string; livekit_room_name: string; max_participants: number } | null = null;
+  let participant: { id: string; user_id: string; role: ParticipantRole } | null = null;
   let lastCreateError: unknown;
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -187,7 +187,7 @@ const createMeetings = async (payload: any, userId: string) => {
     }
   }
 
-  if (!meeting || !participant) {
+  if (meeting === null || participant === null) {
     throw new ApiError(
       StatusCodes.CONFLICT,
       `Unable to create meeting with a unique join code${lastCreateError instanceof Error ? `: ${lastCreateError.message}` : ""}`,
