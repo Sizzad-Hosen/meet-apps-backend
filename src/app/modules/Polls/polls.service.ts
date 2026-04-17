@@ -7,7 +7,7 @@ import { pollRepository } from "../../repositories/poll.repository";
 
 const createPollPayloadSchema = z.object({
     question: z.string().trim().min(1).max(255),
-    options: z.array(z.string().trim().min(1).max(255)).min(2),
+    options: z.array(z.string().trim().min(1).max(255)).min(2).max(10),
 });
 
 const submitVotePayloadSchema = z.object({
@@ -66,24 +66,15 @@ const submitPollVote = async (code: string, pollId: string, payload: unknown, cu
         throw new ApiError(StatusCodes.NOT_FOUND, "Poll option not found");
     }
 
-    const existingVote = await prisma.pollVote.findUnique({
+    return prisma.pollVote.upsert({
         where: {
             poll_id_voter_id: {
                 poll_id: poll.id,
                 voter_id: currentUserId,
             },
         },
-    });
-
-    if (existingVote) {
-        return prisma.pollVote.update({
-            where: { id: existingVote.id },
-            data: { option_id: option.id },
-        });
-    }
-
-    return prisma.pollVote.create({
-        data: {
+        update: { option_id: option.id },
+        create: {
             poll_id: poll.id,
             option_id: option.id,
             voter_id: currentUserId,

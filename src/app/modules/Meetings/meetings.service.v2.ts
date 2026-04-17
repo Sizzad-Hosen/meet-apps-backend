@@ -140,33 +140,69 @@ const createMeetings = async (payload: any, userId: string) => {
     throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
   }
 
-  const meeting = await prisma.meeting.create({
-    data: {
-      title: payload.title,
-      type: payload.type,
-      max_participants: payload.max_participants ?? 50,
-      waiting_room_on: payload.waiting_room_on ?? true,
-      allow_screenshare: payload.allow_screenshare ?? true,
-      screenshare_needs_approval: payload.screenshare_needs_approval ?? false,
-      is_recorded: payload.is_recorded ?? false,
-      scheduled_at: payload.scheduled_at ? new Date(payload.scheduled_at) : null,
-      host_id: userId,
-      join_code: await createUniqueJoinCode(),
-      livekit_room_name: generateRoomName(),
-    },
-  });
+  let meeting: { id: string; livekit_room_name: string; max_participants: number };
+  let participant: { id: string; user_id: string; role: ParticipantRole };
+  let lastCreateError: unknown;
 
-  await ensureRoomExists(meeting);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const newMeeting = await tx.meeting.create({
+          data: {
+            title: payload.title,
+            type: payload.type,
+            max_participants: payload.max_participants ?? 50,
+            waiting_room_on: payload.waiting_room_on ?? true,
+            allow_screenshare: payload.allow_screenshare ?? true,
+            screenshare_needs_approval: payload.screenshare_needs_approval ?? false,
+            is_recorded: payload.is_recorded ?? false,
+            scheduled_at: payload.scheduled_at ? new Date(payload.scheduled_at) : null,
+            host_id: userId,
+            join_code: await createUniqueJoinCode(),
+            livekit_room_name: generateRoomName(),
+          },
+        });
 
-  const participant = await prisma.meetingParticipant.create({
-    data: {
-      meeting_id: meeting.id,
-      user_id: userId,
-      role: ParticipantRole.host,
-      status: ParticipantStatus.admitted,
-      joined_at: new Date(),
-    },
-  });
+        const hostParticipant = await tx.meetingParticipant.create({
+          data: {
+            meeting_id: newMeeting.id,
+            user_id: userId,
+            role: ParticipantRole.host,
+            status: ParticipantStatus.admitted,
+            joined_at: new Date(),
+          },
+        });
+        return { meeting: newMeeting, participant: hostParticipant };
+      });
+
+      meeting = result.meeting;
+      participant = result.participant;
+      break;
+    } catch (error: unknown) {
+      const isP2002 = typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002";
+      if (!isP2002 || attempt === 4) {
+        lastCreateError = error;
+        break;
+      }
+    }
+  }
+
+  if (!meeting || !participant) {
+    throw new ApiError(
+      StatusCodes.CONFLICT,
+      `Unable to create meeting with a unique join code${lastCreateError instanceof Error ? `: ${lastCreateError.message}` : ""}`,
+    );
+  }
+
+  try {
+    await ensureRoomExists(meeting);
+  } catch (error) {
+    await prisma.$transaction([
+      prisma.meetingParticipant.deleteMany({ where: { meeting_id: meeting.id } }),
+      prisma.meeting.delete({ where: { id: meeting.id } }),
+    ]);
+    throw error;
+  }
 
   return {
     meeting,
@@ -195,11 +231,10 @@ const joinMeeting = async (joinCode: string, userId: string) => {
     throw new ApiError(StatusCodes.FORBIDDEN, "You are not allowed to join this meeting");
   }
 
-  if (!existingParticipant) {
-    const activeParticipants = await countActiveParticipants(meeting.id);
-    if (activeParticipants >= meeting.max_participants) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, "Meeting has reached the participant limit");
-    }
+  const activeParticipants = await countActiveParticipants(meeting.id);
+  const existingIsActive = existingParticipant?.status === ParticipantStatus.admitted && existingParticipant.left_at === null;
+  if (activeParticipants >= meeting.max_participants && !existingIsActive) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Meeting has reached the participant limit");
   }
 
   const nextStatus = isHost || !meeting.waiting_room_on ? ParticipantStatus.admitted : ParticipantStatus.waiting;
@@ -596,21 +631,20 @@ const deleteMeeting = async (code: string, currentUserId: string) => {
     throw new ApiError(StatusCodes.FORBIDDEN, "Only host can delete meeting");
   }
 
-  await prisma.screenShare.deleteMany({
-    where: { meeting_id: meeting.id },
-  });
-
-  await prisma.recording.deleteMany({
-    where: { meeting_id: meeting.id },
-  });
-
-  await prisma.meetingParticipant.deleteMany({
-    where: { meeting_id: meeting.id },
-  });
-
-  await prisma.meeting.delete({
-    where: { id: meeting.id },
-  });
+  await prisma.$transaction([
+    prisma.screenShare.deleteMany({
+      where: { meeting_id: meeting.id },
+    }),
+    prisma.recording.deleteMany({
+      where: { meeting_id: meeting.id },
+    }),
+    prisma.meetingParticipant.deleteMany({
+      where: { meeting_id: meeting.id },
+    }),
+    prisma.meeting.delete({
+      where: { id: meeting.id },
+    }),
+  ]);
 
   try {
     await clientes.roomServiceClient.deleteRoom(meeting.livekit_room_name);
@@ -645,7 +679,7 @@ const handleWebhookEvent = async (event: { event: string; room?: { name?: string
       where: { id: meeting.id },
       data: {
         status: MeetingStatus.active,
-        started_at: new Date(),
+        ...(meeting.started_at ? {} : { started_at: new Date() }),
       },
     });
   }

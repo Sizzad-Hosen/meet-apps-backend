@@ -19,7 +19,7 @@ const createPollSchema = z.object({
     }),
     body: z.object({
         question: z.string().trim().min(1).max(255),
-        options: z.array(z.string().trim().min(1).max(255)).min(2),
+        options: z.array(z.string().trim().min(1).max(255)).min(2).max(20),
     }),
 });
 

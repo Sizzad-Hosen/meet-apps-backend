@@ -19,6 +19,14 @@ const createMeetingSchema = z.object({
     screenshare_needs_approval: z.boolean().optional(),
     is_recorded: z.boolean().optional(),
     scheduled_at: z.string().datetime().optional(),
+  }).superRefine((data, ctx) => {
+    if (data.type === "scheduled" && !data.scheduled_at) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scheduled_at"],
+        message: "scheduled_at is required when type is scheduled",
+      });
+    }
   }),
 });
 
