@@ -52,6 +52,7 @@ model User {
   meetingParticipants MeetingParticipant[]
   screenShares        ScreenShare[]
   breakoutMessages    BreakoutMessage[]
+  pollVotes           PollVote[]
 
   @@map("users")
 }
@@ -83,8 +84,11 @@ model Meeting {
   recordings          Recording[]
   breakoutRooms       BreakoutRoom[]
   breakoutMessages    BreakoutMessage[]
+  polls               Poll[]
 
   @@map("meetings")
+  @@index([host_id, status])
+  @@index([status, created_at])
 }
 
 // Meeting Participants
@@ -113,6 +117,9 @@ model MeetingParticipant {
 
   // A user can only appear once per meeting
   @@unique([meeting_id, user_id])
+  @@index([meeting_id, status])
+  @@index([user_id, meeting_id])
+  @@index([breakout_room_id])
   @@map("meeting_participants")
 }
 
@@ -138,16 +145,18 @@ model Recording {
   id               String          @id @default(uuid()) @db.Uuid
   meeting_id       String          @db.Uuid
   egress_id        String
-  s3_key           String
-  transcript_url   String? // ✅ optional
+  s3_key           String?
+  transcript_url   String?
   status           RecordingStatus @default(recording)
-  duration_seconds String? // ✅ optional
+  duration_seconds Int?
   started_at       DateTime        @default(now())
   ended_at         DateTime?
   created_at       DateTime        @default(now())
 
   meeting Meeting @relation(fields: [meeting_id], references: [id])
 
+  @@unique([egress_id])
+  @@index([meeting_id])
   @@map("recordings")
 }
 
@@ -174,6 +183,7 @@ model BreakoutRoom {
   messages     BreakoutMessage[]
 
   @@map("breakout_rooms")
+  @@index([meeting_id, status])
 }
 
 model BreakoutMessage {
@@ -189,6 +199,8 @@ model BreakoutMessage {
   sender       User          @relation(fields: [sender_id], references: [id])
 
   @@map("breakout_messages")
+  @@index([meeting_id, created_at])
+  @@index([breakout_room_id, created_at])
 }
 
 model Poll {
@@ -204,6 +216,7 @@ model Poll {
   votes   PollVote[]
 
   @@map("polls")
+  @@index([meeting_id, created_at])
 }
 
 model PollOption {
@@ -215,6 +228,7 @@ model PollOption {
   votes PollVote[]
 
   @@map("poll_options")
+  @@index([poll_id])
 }
 
 model PollVote {
@@ -229,5 +243,6 @@ model PollVote {
   voter  User       @relation(fields: [voter_id], references: [id])
 
   @@unique([poll_id, voter_id])
+  @@index([option_id])
   @@map("poll_votes")
 }

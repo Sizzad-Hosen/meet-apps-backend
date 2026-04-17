@@ -1,11 +1,11 @@
-import z from "zod";
+import { z } from "zod";
 
 const codeParamSchema = z.object({
   code: z.string().trim().min(4).max(12),
 });
 
-const idParamSchema = z.object({
-  id: z.string().uuid(),
+const recordingIdParamSchema = z.object({
+  recordingId: z.string().uuid(),
 });
 
 const meetingIdParamSchema = z.object({
@@ -17,7 +17,7 @@ const codeOnlySchema = z.object({
 });
 
 const recordingIdSchema = z.object({
-  params: idParamSchema,
+  params: recordingIdParamSchema,
 });
 
 const meetingIdSchema = z.object({

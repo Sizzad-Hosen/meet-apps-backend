@@ -65,7 +65,6 @@ const loginUser = async (payload: any) => {
     where: { email: payload.email },
   });
 
-  console.log("existingUser", existingUser)
   if (!existingUser) {
     throw new ApiError(StatusCodes.UNAUTHORIZED, 'Invalid email or password');
   }
@@ -92,7 +91,6 @@ const loginUser = async (payload: any) => {
     role:   existingUser.role,
   };
 
-  console.log("tokenPayload", tokenPayload)
   // 5. Token generate
   const accessToken = generateToken(
     tokenPayload,
@@ -100,15 +98,11 @@ const loginUser = async (payload: any) => {
     config.jwt.expires_in as string
   );
 
-  console.log("accessToken", accessToken)
-
   const refreshToken = generateToken(
     tokenPayload,
     config.jwt.refresh_token_secret as string,
     config.jwt.refresh_token_expires_in as string
   );
-  console.log("refreshToken", refreshToken)
-
   // 6. passwordHash 
   const { password: _, ...safeUser } = existingUser;
 

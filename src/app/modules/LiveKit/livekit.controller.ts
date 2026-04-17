@@ -6,7 +6,24 @@ import { sendResponse } from "../../../shared/sendResponse";
 import { MeetingServices } from "../Meetings/meetings.service.v2";
 
 const issueToken = catchAsync(async (req: Request, res: Response) => {
-  const result = await MeetingServices.getLiveKitToken(req.body.joinCode, req.user?.userId || "");
+  if (!req.body.joinCode) {
+    return sendResponse(res, {
+      statusCode: StatusCodes.BAD_REQUEST,
+      success: false,
+      message: "joinCode is required",
+    });
+  }
+
+  const userId = req.user?.userId;
+  if (!userId) {
+    return sendResponse(res, {
+      statusCode: StatusCodes.UNAUTHORIZED,
+      success: false,
+      message: "Authentication required",
+    });
+  }
+
+  const result = await MeetingServices.getLiveKitToken(req.body.joinCode, userId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -17,9 +34,9 @@ const issueToken = catchAsync(async (req: Request, res: Response) => {
 });
 
 const handleWebhook = catchAsync(async (req: Request, res: Response) => {
-  const rawBody = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
-  const authHeader = req.header("Authorization") || req.header("Authorize") || undefined;
-  const event = await clientes.webhookReceiver.receive(rawBody, authHeader);
+  const rawBody = req.body as Buffer;
+  const authHeader = req.header("Authorization");
+  const event = await clientes.webhookReceiver.receive(rawBody.toString("utf8"), authHeader);
   const result = await MeetingServices.handleWebhookEvent(event);
 
   sendResponse(res, {

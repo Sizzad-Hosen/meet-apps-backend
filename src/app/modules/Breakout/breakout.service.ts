@@ -37,12 +37,12 @@ const createBreakoutRooms = async (code: string, payload: any, currentUserId: st
     );
 
     const participantsToAssign = admittedParticipants.filter((participant) => participant.user_id !== meeting.host_id);
-
     const assignments: Array<{ participantId: string; roomId: string }> = [];
 
     if (roomsPayload.some((room: any) => room.participantIds.length > 0)) {
-        for (const roomPayload of roomsPayload) {
-            const room = rooms.find((created) => created.name === roomPayload.name);
+        for (let i = 0; i < roomsPayload.length; i++) {
+            const roomPayload = roomsPayload[i];
+            const room = rooms[i];
             if (!room) continue;
 
             const selected = participantsToAssign.filter((participant) => roomPayload.participantIds.includes(participant.user_id));
@@ -53,7 +53,6 @@ const createBreakoutRooms = async (code: string, payload: any, currentUserId: st
     }
 
     const remainingParticipants = participantsToAssign.filter((participant) => !assignments.some((assign) => assign.participantId === participant.id));
-
     remainingParticipants.forEach((participant, index) => {
         const room = rooms[index % rooms.length];
         assignments.push({ participantId: participant.id, roomId: room.id });
@@ -84,7 +83,6 @@ const listBreakoutRooms = async (code: string, currentUserId: string) => {
                         select: {
                             id: true,
                             name: true,
-                            email: true,
                             avatarUrl: true,
                         },
                     },

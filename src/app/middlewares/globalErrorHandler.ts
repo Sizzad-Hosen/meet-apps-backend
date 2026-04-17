@@ -5,6 +5,7 @@ import ApiError from "../errors/ApiError";
 import config from "../config";
 import { handleZodError } from "../errors/zodError";
 import { TErrorResponse, TErrorSources } from "../types/error.types";
+import { logger } from "../../shared/logger";
 
 
 export const globalErrorHandler = async (
@@ -52,9 +53,13 @@ export const globalErrorHandler = async (
   }
 
   // ✅ Dev logging
-  if (config.env === "development") {
-    console.error("[GlobalErrorHandler]", err);
-  }
+  logger.error("request_error", {
+    path: req.originalUrl,
+    method: req.method,
+    message,
+    statusCode,
+    stack,
+  });
 
   const isDev = config.env === "development";
 

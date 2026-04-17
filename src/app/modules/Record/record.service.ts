@@ -1,5 +1,7 @@
 import { EncodedFileOutput } from 'livekit-server-sdk';
 import { StatusCodes } from 'http-status-codes';
+import path from 'path';
+import { mkdir } from 'fs/promises';
 import prisma from '../../../lib/prisma';
 import { clientes } from '../../../helpers/s3';
 import ApiError from '../../errors/ApiError';
@@ -58,14 +60,10 @@ export const startRecording = async (code: string, currentUserId: string) => {
     }
   }
 
-  const fs = await import('fs');
-  const path = await import('path');
   const filePath = `recordings/${meeting.id}/${Date.now()}.mp4`;
   const directory = path.dirname(filePath);
 
-  if (!fs.existsSync(directory)) {
-    fs.mkdirSync(directory, { recursive: true });
-  }
+  await mkdir(directory, { recursive: true });
 
   const output = new EncodedFileOutput({
     filepath: filePath
@@ -88,14 +86,21 @@ export const startRecording = async (code: string, currentUserId: string) => {
     throw new ApiError(StatusCodes.BAD_GATEWAY, 'Egress failed to start properly');
   }
 
-  return prisma.recording.create({
-    data: {
-      meeting_id: meeting.id,
-      egress_id: egressInfo.egressId,
-      s3_key: filePath,
-      status: 'recording'
+  try {
+    return await prisma.recording.create({
+      data: {
+        meeting_id: meeting.id,
+        egress_id: egressInfo.egressId,
+        s3_key: filePath,
+        status: 'recording'
+      }
+    });
+  } catch (error: any) {
+    if (error.code === 'P2002') {
+      throw new ApiError(StatusCodes.CONFLICT, 'Recording already in progress');
     }
-  });
+    throw error;
+  }
 };
 
 const stopRecording = async (code: string, currentUserId: string) => {
@@ -113,19 +118,27 @@ const stopRecording = async (code: string, currentUserId: string) => {
     throw new ApiError(StatusCodes.NOT_FOUND, 'No active recording found');
   }
 
-  await clientes.egressClient.stopEgress(recording.egress_id);
+  let durationSeconds: number | null = null;
+  let status: 'completed' | 'failed' = 'completed';
 
-  const durationSeconds = Math.max(
-    0,
-    Math.floor((Date.now() - new Date(recording.started_at).getTime()) / 1000)
-  ).toString();
+  try {
+    await clientes.egressClient.stopEgress(recording.egress_id);
+    durationSeconds = Math.max(
+      0,
+      Math.floor((Date.now() - new Date(recording.started_at).getTime()) / 1000)
+    );
+  } catch (error) {
+    status = 'failed';
+    // Optionally log the error
+    console.error('Failed to stop egress:', error);
+  }
 
   return prisma.recording.update({
     where: { id: recording.id },
     data: {
-      status: 'completed',
+      status,
       ended_at: new Date(),
-      duration_seconds: durationSeconds
+      ...(typeof durationSeconds === "number" ? { duration_seconds: String(durationSeconds) } : {}),
     }
   });
 };
@@ -172,11 +185,34 @@ const getDownloadUrl = async (recordingId: string, currentUserId: string) => {
 
   const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
 
+  const sanitizedPath = path.posix.normalize(recording.s3_key).replace(/^\/+/, '').replace(/^(\.\.\/)+/, '');
+  const encodedPath = sanitizedPath.split('/').map(encodeURIComponent).join('/');
+
   return {
-    url: `${baseUrl}/${recording.s3_key.replace(/\\/g, '/')}`,
-    path: recording.s3_key,
+    url: `${baseUrl}/api/v1/recordings/${recordingId}/download`,
+    path: sanitizedPath,
     expires_in: null
   };
+};
+
+const getRecordingForDownload = async (recordingId: string, currentUserId: string) => {
+  const recording = await prisma.recording.findUnique({
+    where: { id: recordingId }
+  });
+
+  if (!recording) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Recording not found');
+  }
+
+  const participant = await prisma.meetingParticipant.findFirst({
+    where: { meeting_id: recording.meeting_id, user_id: currentUserId }
+  });
+
+  if (!participant) {
+    throw new ApiError(StatusCodes.FORBIDDEN, 'Access denied');
+  }
+
+  return recording;
 };
 
 const deleteRecording = async (recordingId: string, currentUserId: string) => {
@@ -200,9 +236,25 @@ const deleteRecording = async (recordingId: string, currentUserId: string) => {
     throw new ApiError(StatusCodes.FORBIDDEN, 'Only host can delete');
   }
 
-  const fs = await import('fs');
-  if (recording.s3_key && fs.existsSync(recording.s3_key)) {
-    fs.unlinkSync(recording.s3_key);
+  if (recording.status === 'recording') {
+    try {
+      await clientes.egressClient.stopEgress(recording.egress_id);
+    } catch (error) {
+      console.error('Failed to stop egress during deletion:', error);
+      // Still allow deletion? Or throw?
+      // For now, throw to prevent deletion if can't stop
+      throw new ApiError(StatusCodes.CONFLICT, 'Cannot delete active recording; failed to stop egress');
+    }
+  }
+
+  if (recording.s3_key) {
+    try {
+      const { unlink } = await import('fs/promises');
+      await unlink(recording.s3_key);
+    } catch (error) {
+      console.error('Failed to delete file:', error);
+      // Log but don't throw, as DB deletion is more important
+    }
   }
 
   return prisma.recording.delete({
@@ -215,5 +267,6 @@ export const RecordingServices = {
   stopRecording,
   getRecordings,
   getDownloadUrl,
+  getRecordingForDownload,
   deleteRecording
 };

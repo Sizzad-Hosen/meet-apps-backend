@@ -3,18 +3,20 @@ import status from "http-status";
 import ApiError from "../errors/ApiError";
 import { verifyToken } from "../../helpers/jwtHelpers";
 import { UserRole } from "@prisma/client";
+import config from "../config";
 
 export const auth = (...authRoles: UserRole[]) => async (req: Request, res: Response, next: NextFunction) => {
   try {
-
-    const accessToken = req.cookies?.["accessToken"] 
-      || req.headers?.authorization?.split(" ")[1]; // Bearer <token>
+    const bearerToken = req.headers?.authorization?.startsWith("Bearer ")
+      ? req.headers.authorization.split(" ")[1]
+      : undefined;
+    const accessToken = req.cookies?.accessToken || bearerToken;
 
     if (!accessToken) {
       throw new ApiError(status.UNAUTHORIZED, 'Unauthorized! No access token provided.');
     }
 
-    const decoded = await verifyToken(accessToken, process.env.JWT_SECRET as string);
+    const decoded = await verifyToken(accessToken, config.jwt.jwt_secret);
 
     if (!decoded) {
       throw new ApiError(status.UNAUTHORIZED, 'Unauthorized! Invalid access token.');
