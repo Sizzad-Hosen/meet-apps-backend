@@ -36,6 +36,62 @@ const participantActionSchema = z.object({
   params: userIdParamSchema,
 });
 
+const createBreakoutSchema = z.object({
+  params: codeParamSchema,
+  body: z.object({
+    rooms: z.array(z.object({
+      name: z.string().trim().min(1).max(100).optional(),
+      participantIds: z.array(z.string().uuid()).optional(),
+    })).optional(),
+  }).optional(),
+});
+
+const joinBreakoutSchema = z.object({
+  params: z.object({
+    code: z.string().trim().min(4).max(12),
+    roomId: z.string().uuid(),
+  }),
+});
+
+const broadcastBreakoutSchema = z.object({
+  params: codeParamSchema,
+  body: z.object({
+    message: z.string().trim().min(1),
+  }),
+});
+
+const createPollSchema = z.object({
+  params: codeParamSchema,
+  body: z.object({
+    question: z.string().trim().min(2).max(255),
+    options: z.array(z.string().trim().min(1).max(255)).min(2),
+  }),
+});
+
+const pollIdSchema = z.object({
+  params: z.object({
+    code: z.string().trim().min(4).max(12),
+    pollId: z.string().uuid(),
+  }),
+});
+
+const votePollSchema = z.object({
+  params: z.object({
+    code: z.string().trim().min(4).max(12),
+    pollId: z.string().uuid(),
+  }),
+  body: z.object({
+    optionId: z.string().uuid(),
+  }),
+});
+
+const closePollSchema = z.object({
+  params: z.object({
+    code: z.string().trim().min(4).max(12),
+    pollId: z.string().uuid(),
+  }),
+});
+
 const updateMeetingSchema = z.object({
   params: codeParamSchema,
   body: z.object({
@@ -57,4 +113,11 @@ export const MeetingsValidation = {
   meetingCodeSchema,
   participantActionSchema,
   updateMeetingSchema,
+  createBreakoutSchema,
+  joinBreakoutSchema,
+  broadcastBreakoutSchema,
+  createPollSchema,
+  pollIdSchema,
+  votePollSchema,
+  closePollSchema,
 };

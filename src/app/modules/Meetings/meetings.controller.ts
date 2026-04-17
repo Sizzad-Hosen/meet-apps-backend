@@ -72,6 +72,106 @@ const admitAll = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const createBreakoutRooms = catchAsync(async (req: Request, res: Response) => {
+  const result = await MeetingServices.createBreakoutRooms(req.params.code, req.body, requireUserId(req));
+  sendResponse(res, {
+    statusCode: StatusCodes.CREATED,
+    success: true,
+    message: 'Breakout rooms created successfully',
+    data: result,
+  });
+});
+
+const listBreakoutRooms = catchAsync(async (req: Request, res: Response) => {
+  const result = await MeetingServices.listBreakoutRooms(req.params.code, requireUserId(req));
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Breakout rooms fetched successfully',
+    data: result,
+  });
+});
+
+const joinBreakoutRoom = catchAsync(async (req: Request, res: Response) => {
+  const result = await MeetingServices.joinBreakoutRoom(req.params.code, req.params.roomId, requireUserId(req));
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Joined breakout room successfully',
+    data: result,
+  });
+});
+
+const endAllBreakoutRooms = catchAsync(async (req: Request, res: Response) => {
+  const result = await MeetingServices.endAllBreakoutRooms(req.params.code, requireUserId(req));
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'All breakout rooms closed successfully',
+    data: result,
+  });
+});
+
+const broadcastBreakoutMessage = catchAsync(async (req: Request, res: Response) => {
+  const result = await MeetingServices.broadcastBreakoutMessage(req.params.code, req.body, requireUserId(req));
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Broadcast message sent to breakout rooms',
+    data: result,
+  });
+});
+
+const createPoll = catchAsync(async (req: Request, res: Response) => {
+  const result = await MeetingServices.createPoll(req.params.code, req.body, requireUserId(req));
+  sendResponse(res, {
+    statusCode: StatusCodes.CREATED,
+    success: true,
+    message: 'Poll created successfully',
+    data: result,
+  });
+});
+
+const listPolls = catchAsync(async (req: Request, res: Response) => {
+  const result = await MeetingServices.listPolls(req.params.code);
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Polls fetched successfully',
+    data: result,
+  });
+});
+
+const submitPollVote = catchAsync(async (req: Request, res: Response) => {
+  const result = await MeetingServices.submitPollVote(req.params.code, req.params.pollId, req.body, requireUserId(req));
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Vote submitted successfully',
+    data: result,
+  });
+});
+
+const getPollResults = catchAsync(async (req: Request, res: Response) => {
+  const result = await MeetingServices.getPollResults(req.params.code, req.params.pollId);
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Poll results fetched successfully',
+    data: result,
+  });
+});
+
+const closePoll = catchAsync(async (req: Request, res: Response) => {
+  const result = await MeetingServices.closePoll(req.params.code, req.params.pollId, requireUserId(req));
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Poll closed successfully',
+    data: result,
+  });
+});
+
 const denyParticipant = catchAsync(async (req: Request, res: Response) => {
   const result = await MeetingServices.denyParticipant(req.params.code, req.params.userId, requireUserId(req));
 
@@ -194,6 +294,16 @@ export const MeetingsControllers = {
   denyParticipant,
   kickParticipant,
   endMeeting,
+  createBreakoutRooms,
+  listBreakoutRooms,
+  joinBreakoutRoom,
+  endAllBreakoutRooms,
+  broadcastBreakoutMessage,
+  createPoll,
+  listPolls,
+  submitPollVote,
+  getPollResults,
+  closePoll,
   getWaitingRoom,
   muteParticipant,
   muteAll,

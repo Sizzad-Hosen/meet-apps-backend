@@ -205,21 +205,21 @@ const joinMeeting = async (joinCode: string, userId: string) => {
   const nextStatus = isHost || !meeting.waiting_room_on ? ParticipantStatus.admitted : ParticipantStatus.waiting;
   const participant = existingParticipant
     ? await prisma.meetingParticipant.update({
-        where: { id: existingParticipant.id },
-        data: {
-          status: nextStatus,
-          left_at: null,
-          role: isHost ? ParticipantRole.host : existingParticipant.role,
-        },
-      })
+      where: { id: existingParticipant.id },
+      data: {
+        status: nextStatus,
+        left_at: null,
+        role: isHost ? ParticipantRole.host : existingParticipant.role,
+      },
+    })
     : await prisma.meetingParticipant.create({
-        data: {
-          meeting_id: meeting.id,
-          user_id: userId,
-          role: isHost ? ParticipantRole.host : ParticipantRole.guest,
-          status: nextStatus,
-        },
-      });
+      data: {
+        meeting_id: meeting.id,
+        user_id: userId,
+        role: isHost ? ParticipantRole.host : ParticipantRole.guest,
+        status: nextStatus,
+      },
+    });
 
   let livekitToken: string | null = null;
   if (participant.status === ParticipantStatus.admitted) {
@@ -303,6 +303,339 @@ const getWaitingRoom = async (code: string, hostId: string) => {
           avatarUrl: true,
         },
       },
+    },
+  });
+};
+
+const ensureHost = async (meetingId: string, userId: string) => {
+  const meeting = await prisma.meeting.findUnique({
+    where: { id: meetingId },
+  });
+
+  if (!meeting) {
+    throw new ApiError(StatusCodes.NOT_FOUND, "Meeting not found");
+  }
+
+  if (meeting.host_id !== userId) {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Only host can perform this action");
+  }
+
+  return meeting;
+};
+
+const createBreakoutRooms = async (code: string, payload: any, currentUserId: string) => {
+  const meeting = await getMeetingByCodeOrThrow(code);
+  await ensureHost(meeting.id, currentUserId);
+
+  const admittedParticipants = await prisma.meetingParticipant.findMany({
+    where: {
+      meeting_id: meeting.id,
+      status: ParticipantStatus.admitted,
+      role: { not: ParticipantRole.host },
+    },
+  });
+
+  if (admittedParticipants.length === 0) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "No participants available for breakout rooms");
+  }
+
+  const roomsPayload = Array.isArray(payload.rooms) && payload.rooms.length > 0
+    ? payload.rooms.map((room: any, index: number) => ({ name: room.name?.trim() || `Room ${index + 1}`, participantIds: Array.isArray(room.participantIds) ? room.participantIds : [] }))
+    : [{ name: "Room 1", participantIds: [] }, { name: "Room 2", participantIds: [] }];
+
+  const rooms = await Promise.all(
+    roomsPayload.map((room: any) => prisma.breakoutRoom.create({
+      data: {
+        meeting_id: meeting.id,
+        name: room.name,
+      },
+    }))
+  );
+
+  const participantsToAssign = admittedParticipants.filter((participant) => participant.user_id !== meeting.host_id);
+
+  const assignments: Array<{ participantId: string; roomId: string }> = [];
+
+  if (roomsPayload.some((room: any) => room.participantIds.length > 0)) {
+    for (const roomPayload of roomsPayload) {
+      const room = rooms.find((created) => created.name === roomPayload.name);
+      if (!room) continue;
+
+      const selected = participantsToAssign.filter((participant) => roomPayload.participantIds.includes(participant.user_id));
+      for (const participant of selected) {
+        assignments.push({ participantId: participant.id, roomId: room.id });
+      }
+    }
+  }
+
+  const remainingParticipants = participantsToAssign.filter((participant) => !assignments.some((assign) => assign.participantId === participant.id));
+
+  remainingParticipants.forEach((participant, index) => {
+    const room = rooms[index % rooms.length];
+    assignments.push({ participantId: participant.id, roomId: room.id });
+  });
+
+  await Promise.all(assignments.map((assignment) =>
+    prisma.meetingParticipant.update({
+      where: { id: assignment.participantId },
+      data: { breakout_room_id: assignment.roomId },
+    })
+  ));
+
+  return {
+    rooms,
+    assignments,
+  };
+};
+
+const listBreakoutRooms = async (code: string, currentUserId: string) => {
+  const meeting = await getMeetingByCodeOrThrow(code);
+
+  const rooms = await prisma.breakoutRoom.findMany({
+    where: { meeting_id: meeting.id },
+    include: {
+      participants: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatarUrl: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const currentParticipant = await prisma.meetingParticipant.findFirst({
+    where: {
+      meeting_id: meeting.id,
+      user_id: currentUserId,
+    },
+    include: {
+      breakoutRoom: true,
+    },
+  });
+
+  return {
+    rooms,
+    myAssignment: currentParticipant?.breakoutRoom
+      ? {
+        roomId: currentParticipant.breakoutRoom.id,
+        roomName: currentParticipant.breakoutRoom.name,
+      }
+      : null,
+  };
+};
+
+const joinBreakoutRoom = async (code: string, roomId: string, currentUserId: string) => {
+  const meeting = await getMeetingByCodeOrThrow(code);
+  const participant = await getParticipantOrThrow(meeting.id, currentUserId);
+
+  if (!participant.breakout_room_id || participant.breakout_room_id !== roomId) {
+    throw new ApiError(StatusCodes.FORBIDDEN, "You are not assigned to this breakout room");
+  }
+
+  const room = await prisma.breakoutRoom.findFirst({
+    where: { id: roomId, meeting_id: meeting.id },
+  });
+
+  if (!room) {
+    throw new ApiError(StatusCodes.NOT_FOUND, "Breakout room not found");
+  }
+
+  if (room.status === 'closed') {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "This breakout room is closed");
+  }
+
+  return {
+    joined: true,
+    roomId: room.id,
+    roomName: room.name,
+  };
+};
+
+const endAllBreakoutRooms = async (code: string, currentUserId: string) => {
+  const meeting = await getMeetingByCodeOrThrow(code);
+  await ensureHost(meeting.id, currentUserId);
+
+  await prisma.breakoutRoom.updateMany({
+    where: { meeting_id: meeting.id },
+    data: { status: 'closed' },
+  });
+
+  await prisma.meetingParticipant.updateMany({
+    where: { meeting_id: meeting.id },
+    data: { breakout_room_id: null },
+  });
+
+  return { ended: true };
+};
+
+const broadcastBreakoutMessage = async (code: string, payload: any, currentUserId: string) => {
+  const meeting = await getMeetingByCodeOrThrow(code);
+  await ensureHost(meeting.id, currentUserId);
+
+  if (!payload.message || typeof payload.message !== 'string' || payload.message.trim().length === 0) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Message is required');
+  }
+
+  return prisma.breakoutMessage.create({
+    data: {
+      meeting_id: meeting.id,
+      sender_id: currentUserId,
+      content: payload.message.trim(),
+    },
+  });
+};
+
+const createPoll = async (code: string, payload: any, currentUserId: string) => {
+  const meeting = await getMeetingByCodeOrThrow(code);
+  await ensureHost(meeting.id, currentUserId);
+
+  if (!payload.question || !payload.options || !Array.isArray(payload.options) || payload.options.length < 2) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Question and at least two poll options are required');
+  }
+
+  const poll = await prisma.poll.create({
+    data: {
+      meeting_id: meeting.id,
+      question: payload.question.trim(),
+      options: {
+        create: payload.options.map((text: string) => ({ text: text.trim() })),
+      },
+    },
+    include: { options: true },
+  });
+
+  return poll;
+};
+
+const listPolls = async (code: string) => {
+  const meeting = await getMeetingByCodeOrThrow(code);
+
+  const polls = await prisma.poll.findMany({
+    where: { meeting_id: meeting.id },
+    include: {
+      options: {
+        include: {
+          votes: true,
+        },
+      },
+    },
+    orderBy: { created_at: 'desc' },
+  });
+
+  return polls.map((poll) => ({
+    ...poll,
+    options: poll.options.map((option) => ({
+      id: option.id,
+      text: option.text,
+      voteCount: option.votes.length,
+    })),
+  }));
+};
+
+const submitPollVote = async (code: string, pollId: string, payload: any, currentUserId: string) => {
+  const meeting = await getMeetingByCodeOrThrow(code);
+  const participant = await getParticipantOrThrow(meeting.id, currentUserId);
+
+  const poll = await prisma.poll.findUnique({
+    where: { id: pollId },
+    include: { options: true },
+  });
+
+  if (!poll || poll.meeting_id !== meeting.id) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Poll not found');
+  }
+
+  if (poll.is_closed) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Poll is closed');
+  }
+
+  if (!payload.optionId || typeof payload.optionId !== 'string') {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Option selection is required');
+  }
+
+  const option = poll.options.find((item) => item.id === payload.optionId);
+  if (!option) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Poll option not found');
+  }
+
+  const existingVote = await prisma.pollVote.findUnique({
+    where: {
+      poll_id_voter_id: {
+        poll_id: poll.id,
+        voter_id: currentUserId,
+      },
+    },
+  });
+
+  if (existingVote) {
+    return prisma.pollVote.update({
+      where: { id: existingVote.id },
+      data: { option_id: option.id },
+    });
+  }
+
+  return prisma.pollVote.create({
+    data: {
+      poll_id: poll.id,
+      option_id: option.id,
+      voter_id: currentUserId,
+    },
+  });
+};
+
+const getPollResults = async (code: string, pollId: string) => {
+  const meeting = await getMeetingByCodeOrThrow(code);
+
+  const poll = await prisma.poll.findUnique({
+    where: { id: pollId },
+    include: {
+      options: {
+        include: { votes: true },
+      },
+    },
+  });
+
+  if (!poll || poll.meeting_id !== meeting.id) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Poll not found');
+  }
+
+  const results = poll.options.map((option) => ({
+    id: option.id,
+    text: option.text,
+    voteCount: option.votes.length,
+  }));
+
+  const totalVotes = results.reduce((sum, item) => sum + item.voteCount, 0);
+
+  return {
+    pollId: poll.id,
+    question: poll.question,
+    is_closed: poll.is_closed,
+    totalVotes,
+    results,
+  };
+};
+
+const closePoll = async (code: string, pollId: string, currentUserId: string) => {
+  const meeting = await getMeetingByCodeOrThrow(code);
+  await ensureHost(meeting.id, currentUserId);
+
+  const poll = await prisma.poll.findUnique({ where: { id: pollId } });
+  if (!poll || poll.meeting_id !== meeting.id) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Poll not found');
+  }
+
+  return prisma.poll.update({
+    where: { id: poll.id },
+    data: {
+      is_closed: true,
+      closed_at: new Date(),
     },
   });
 };
@@ -691,6 +1024,16 @@ export const MeetingServices = {
   kickParticipant,
   endMeeting,
   getWaitingRoom,
+  createBreakoutRooms,
+  listBreakoutRooms,
+  joinBreakoutRoom,
+  endAllBreakoutRooms,
+  broadcastBreakoutMessage,
+  createPoll,
+  listPolls,
+  submitPollVote,
+  getPollResults,
+  closePoll,
   muteParticipant,
   muteAll,
   getParticipants,

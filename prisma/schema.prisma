@@ -44,6 +44,7 @@ model User {
   googleId  String?  @unique @map("google_id")
   avatarUrl String?  @map("avatar_url")
   role      UserRole @default(USER)
+  settings  Json?
 
   isVerified          Boolean              @default(false) @map("is_verified")
   createdAt           DateTime             @default(now()) @map("created_at")
@@ -51,6 +52,8 @@ model User {
   meetings            Meeting[]
   meetingParticipants MeetingParticipant[]
   screenShares        ScreenShare[]
+  breakoutMessages    BreakoutMessage[]
+  pollVotes           PollVote[]
 
   @@map("users")
 }
@@ -79,16 +82,21 @@ model Meeting {
   created_at          DateTime             @default(now())
   meetingParticipants MeetingParticipant[]
   screenShares        ScreenShare[]
-recordings Recording[]
+  recordings          Recording[]
+  breakoutRooms       BreakoutRoom[]
+  polls               Poll[]
+  breakoutMessages    BreakoutMessage[]
+
   @@map("meetings")
 }
 
 // Meeting Participants
 
 model MeetingParticipant {
-  id         String @id @default(uuid()) @db.Uuid
-  meeting_id String @db.Uuid
-  user_id    String @db.Uuid
+  id               String  @id @default(uuid()) @db.Uuid
+  meeting_id       String  @db.Uuid
+  user_id          String  @db.Uuid
+  breakout_room_id String? @db.Uuid
 
   role   ParticipantRole   @default(guest)
   status ParticipantStatus @default(waiting)
@@ -102,8 +110,9 @@ model MeetingParticipant {
   left_at           DateTime?
 
   // Relations
-  meeting Meeting @relation(fields: [meeting_id], references: [id])
-  user    User    @relation(fields: [user_id], references: [id])
+  meeting      Meeting       @relation(fields: [meeting_id], references: [id])
+  user         User          @relation(fields: [user_id], references: [id])
+  breakoutRoom BreakoutRoom? @relation(fields: [breakout_room_id], references: [id])
 
   // A user can only appear once per meeting
   @@unique([meeting_id, user_id])
@@ -133,9 +142,9 @@ model Recording {
   meeting_id       String          @db.Uuid
   egress_id        String
   s3_key           String
-  transcript_url   String?         // ✅ optional
+  transcript_url   String? // ✅ optional
   status           RecordingStatus @default(recording)
-  duration_seconds String?         // ✅ optional
+  duration_seconds String? // ✅ optional
   started_at       DateTime        @default(now())
   ended_at         DateTime?
   created_at       DateTime        @default(now())
@@ -149,4 +158,79 @@ enum RecordingStatus {
   recording
   completed
   failed
+}
+
+enum BreakoutRoomStatus {
+  open
+  closed
+}
+
+model BreakoutRoom {
+  id         String             @id @default(uuid()) @db.Uuid
+  meeting_id String             @db.Uuid
+  name       String             @db.VarChar(100)
+  status     BreakoutRoomStatus @default(open)
+  created_at DateTime           @default(now())
+
+  meeting      Meeting              @relation(fields: [meeting_id], references: [id])
+  participants MeetingParticipant[]
+  messages     BreakoutMessage[]
+
+  @@map("breakout_rooms")
+}
+
+model BreakoutMessage {
+  id               String   @id @default(uuid()) @db.Uuid
+  meeting_id       String   @db.Uuid
+  breakout_room_id String?  @db.Uuid
+  sender_id        String   @db.Uuid
+  content          String   @db.Text
+  created_at       DateTime @default(now())
+
+  meeting      Meeting       @relation(fields: [meeting_id], references: [id])
+  breakoutRoom BreakoutRoom? @relation(fields: [breakout_room_id], references: [id])
+  sender       User          @relation(fields: [sender_id], references: [id])
+
+  @@map("breakout_messages")
+}
+
+model Poll {
+  id         String    @id @default(uuid()) @db.Uuid
+  meeting_id String    @db.Uuid
+  question   String    @db.VarChar(255)
+  is_closed  Boolean   @default(false)
+  created_at DateTime  @default(now())
+  closed_at  DateTime?
+
+  meeting Meeting      @relation(fields: [meeting_id], references: [id])
+  options PollOption[]
+  votes   PollVote[]
+
+  @@map("polls")
+}
+
+model PollOption {
+  id      String @id @default(uuid()) @db.Uuid
+  poll_id String @db.Uuid
+  text    String @db.VarChar(255)
+
+  poll  Poll       @relation(fields: [poll_id], references: [id])
+  votes PollVote[]
+
+  @@map("poll_options")
+}
+
+model PollVote {
+  id         String   @id @default(uuid()) @db.Uuid
+  poll_id    String   @db.Uuid
+  option_id  String   @db.Uuid
+  voter_id   String   @db.Uuid
+  created_at DateTime @default(now())
+
+  poll   Poll       @relation(fields: [poll_id], references: [id])
+  option PollOption @relation(fields: [option_id], references: [id])
+  voter  User       @relation(fields: [voter_id], references: [id])
+
+  @@unique([poll_id, voter_id])
+  @@map("poll_votes")
 }

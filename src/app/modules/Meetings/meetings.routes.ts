@@ -24,9 +24,21 @@ router.post("/:code/deny/:userId", validateRequest(MeetingsValidation.participan
 router.post("/:code/kick/:userId", validateRequest(MeetingsValidation.participantActionSchema), auth(), MeetingsControllers.kickParticipant);
 router.post("/:code/end", validateRequest(MeetingsValidation.meetingCodeSchema), auth(), MeetingsControllers.endMeeting);
 
+router.post("/:code/breakout", validateRequest(MeetingsValidation.createBreakoutSchema), auth(), MeetingsControllers.createBreakoutRooms);
+router.get("/:code/breakout", validateRequest(MeetingsValidation.meetingCodeSchema), auth(), MeetingsControllers.listBreakoutRooms);
+router.post("/:code/breakout/:roomId/join", validateRequest(MeetingsValidation.joinBreakoutSchema), auth(), MeetingsControllers.joinBreakoutRoom);
+router.post("/:code/breakout/end-all", validateRequest(MeetingsValidation.meetingCodeSchema), auth(), MeetingsControllers.endAllBreakoutRooms);
+router.post("/:code/breakout/broadcast", validateRequest(MeetingsValidation.broadcastBreakoutSchema), auth(), MeetingsControllers.broadcastBreakoutMessage);
+
+router.post("/:code/polls", validateRequest(MeetingsValidation.createPollSchema), auth(), MeetingsControllers.createPoll);
+router.get("/:code/polls", validateRequest(MeetingsValidation.meetingCodeSchema), auth(), MeetingsControllers.listPolls);
+router.post("/:code/polls/:pollId/vote", validateRequest(MeetingsValidation.votePollSchema), auth(), MeetingsControllers.submitPollVote);
+router.get("/:code/polls/:pollId/results", validateRequest(MeetingsValidation.pollIdSchema), auth(), MeetingsControllers.getPollResults);
+router.post("/:code/polls/:pollId/close", validateRequest(MeetingsValidation.closePollSchema), auth(), MeetingsControllers.closePoll);
+
 router.post("/:code/mute/:userId", validateRequest(MeetingsValidation.participantActionSchema), auth(), MeetingsControllers.muteParticipant);
 router.post("/:code/mute-all", validateRequest(MeetingsValidation.meetingCodeSchema), auth(), MeetingsControllers.muteAll);
 router.post("/:code/cohost/:userId", validateRequest(MeetingsValidation.participantActionSchema), auth(), MeetingsControllers.assignCohost);
 router.get("/:code/participants", validateRequest(MeetingsValidation.meetingCodeSchema), auth(), MeetingsControllers.getParticipants);
 
-export const MeetingsRoutes = router ;
+export const MeetingsRoutes = router;
