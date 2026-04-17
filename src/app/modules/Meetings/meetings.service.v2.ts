@@ -205,21 +205,21 @@ const joinMeeting = async (joinCode: string, userId: string) => {
   const nextStatus = isHost || !meeting.waiting_room_on ? ParticipantStatus.admitted : ParticipantStatus.waiting;
   const participant = existingParticipant
     ? await prisma.meetingParticipant.update({
-        where: { id: existingParticipant.id },
-        data: {
-          status: nextStatus,
-          left_at: null,
-          role: isHost ? ParticipantRole.host : existingParticipant.role,
-        },
-      })
+      where: { id: existingParticipant.id },
+      data: {
+        status: nextStatus,
+        left_at: null,
+        role: isHost ? ParticipantRole.host : existingParticipant.role,
+      },
+    })
     : await prisma.meetingParticipant.create({
-        data: {
-          meeting_id: meeting.id,
-          user_id: userId,
-          role: isHost ? ParticipantRole.host : ParticipantRole.guest,
-          status: nextStatus,
-        },
-      });
+      data: {
+        meeting_id: meeting.id,
+        user_id: userId,
+        role: isHost ? ParticipantRole.host : ParticipantRole.guest,
+        status: nextStatus,
+      },
+    });
 
   let livekitToken: string | null = null;
   if (participant.status === ParticipantStatus.admitted) {
@@ -305,6 +305,22 @@ const getWaitingRoom = async (code: string, hostId: string) => {
       },
     },
   });
+};
+
+const ensureHost = async (meetingId: string, userId: string) => {
+  const meeting = await prisma.meeting.findUnique({
+    where: { id: meetingId },
+  });
+
+  if (!meeting) {
+    throw new ApiError(StatusCodes.NOT_FOUND, "Meeting not found");
+  }
+
+  if (meeting.host_id !== userId) {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Only host can perform this action");
+  }
+
+  return meeting;
 };
 
 const admitParticipant = async (code: string, targetUserId: string, currentUserId: string) => {

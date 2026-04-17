@@ -2,6 +2,8 @@ import { auth } from "../../middlewares/auth";
 import { validateRequest } from "../../middlewares/validateRequest";
 import { MeetingsControllers } from "./meetings.controller";
 import { MeetingsValidation } from "./meetings.validation";
+import { BreakoutRoutes } from "../Breakout/breakout.routes";
+import { PollRoutes } from "../Polls/polls.routes";
 
 const router = require("express").Router();
 
@@ -24,9 +26,12 @@ router.post("/:code/deny/:userId", validateRequest(MeetingsValidation.participan
 router.post("/:code/kick/:userId", validateRequest(MeetingsValidation.participantActionSchema), auth(), MeetingsControllers.kickParticipant);
 router.post("/:code/end", validateRequest(MeetingsValidation.meetingCodeSchema), auth(), MeetingsControllers.endMeeting);
 
+router.use("/:code/breakout", BreakoutRoutes);
+router.use("/:code/polls", PollRoutes);
+
 router.post("/:code/mute/:userId", validateRequest(MeetingsValidation.participantActionSchema), auth(), MeetingsControllers.muteParticipant);
 router.post("/:code/mute-all", validateRequest(MeetingsValidation.meetingCodeSchema), auth(), MeetingsControllers.muteAll);
 router.post("/:code/cohost/:userId", validateRequest(MeetingsValidation.participantActionSchema), auth(), MeetingsControllers.assignCohost);
 router.get("/:code/participants", validateRequest(MeetingsValidation.meetingCodeSchema), auth(), MeetingsControllers.getParticipants);
 
-export const MeetingsRoutes = router ;
+export const MeetingsRoutes = router;

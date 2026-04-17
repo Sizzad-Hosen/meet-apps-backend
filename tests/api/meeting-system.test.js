@@ -35,10 +35,28 @@ const state = {
   participants: [],
   screenShares: [],
   recordings: [],
+  breakoutRooms: [],
+  breakoutMessages: [],
+  polls: [],
+  pollOptions: [],
+  pollVotes: [],
   egressCounter: 0,
 };
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
+
+const resetState = () => {
+  state.meetings = [];
+  state.participants = [];
+  state.screenShares = [];
+  state.recordings = [];
+  state.breakoutRooms = [];
+  state.breakoutMessages = [];
+  state.polls = [];
+  state.pollOptions = [];
+  state.pollVotes = [];
+  state.egressCounter = 0;
+};
 
 const makeId = (_prefix, list) => `00000000-0000-4000-8000-${String(list.length + 1).padStart(12, '0')}`;
 
@@ -155,23 +173,35 @@ prisma.meeting.delete = async ({ where }) => {
   return clone(deleted);
 };
 
-prisma.meetingParticipant.findFirst = async ({ where } = {}) => clone(
-  state.participants.find((participant) => matchesWhere(participant, where)) || null
-);
+prisma.meetingParticipant.findFirst = async ({ where, include } = {}) => {
+  const participant = state.participants.find((candidate) => matchesWhere(candidate, where)) || null;
+  if (!participant) {
+    return null;
+  }
+
+  const result = { ...participant };
+  if (include?.user) {
+    const user = state.users.find((candidate) => candidate.id === participant.user_id);
+    result.user = user ? { id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl } : null;
+  }
+
+  if (include?.breakoutRoom) {
+    result.breakoutRoom = state.breakoutRooms.find((room) => room.id === participant.breakout_room_id) || null;
+  }
+
+  return clone(result);
+};
 
 prisma.meetingParticipant.findMany = async ({ where, include } = {}) => clone(
   state.participants
     .filter((participant) => matchesWhere(participant, where))
     .map((participant) => {
-      if (!include?.user) {
-        return participant;
+      const result = { ...participant };
+      if (include?.user) {
+        const user = state.users.find((candidate) => candidate.id === participant.user_id);
+        result.user = user ? { id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl } : null;
       }
-
-      const user = state.users.find((candidate) => candidate.id === participant.user_id);
-      return {
-        ...participant,
-        user: user ? { id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl } : null,
-      };
+      return result;
     })
 );
 
@@ -335,6 +365,186 @@ prisma.recording.delete = async ({ where }) => {
   return clone(deleted);
 };
 
+prisma.breakoutRoom.findMany = async ({ where, include } = {}) => {
+  const rooms = state.breakoutRooms.filter((room) => matchesWhere(room, where));
+  return clone(rooms.map((room) => {
+    const result = { ...room };
+    if (include?.participants) {
+      result.participants = state.participants
+        .filter((participant) => participant.breakout_room_id === room.id)
+        .map((participant) => {
+          const user = state.users.find((candidate) => candidate.id === participant.user_id);
+          return {
+            ...participant,
+            user: user ? { id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl } : null,
+          };
+        });
+    }
+    return result;
+  }));
+};
+
+prisma.breakoutRoom.findFirst = async ({ where, include } = {}) => {
+  const room = state.breakoutRooms.find((candidate) => matchesWhere(candidate, where)) || null;
+  if (!room) {
+    return null;
+  }
+
+  const result = { ...room };
+  if (include?.participants) {
+    result.participants = state.participants
+      .filter((participant) => participant.breakout_room_id === room.id)
+      .map((participant) => {
+        const user = state.users.find((candidate) => candidate.id === participant.user_id);
+        return {
+          ...participant,
+          user: user ? { id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl } : null,
+        };
+      });
+  }
+  return clone(result);
+};
+
+prisma.breakoutRoom.create = async ({ data }) => {
+  const room = {
+    id: makeId('breakoutRoom', state.breakoutRooms),
+    meeting_id: data.meeting_id,
+    name: data.name,
+    status: data.status || 'open',
+    created_at: new Date().toISOString(),
+  };
+
+  state.breakoutRooms.push(room);
+  return clone(room);
+};
+
+prisma.breakoutRoom.updateMany = async ({ where, data }) => {
+  let count = 0;
+  state.breakoutRooms.forEach((room) => {
+    if (matchesWhere(room, where)) {
+      Object.assign(room, data);
+      count += 1;
+    }
+  });
+  return { count };
+};
+
+prisma.breakoutMessage.create = async ({ data }) => {
+  const message = {
+    id: makeId('breakoutMessage', state.breakoutMessages),
+    meeting_id: data.meeting_id,
+    breakout_room_id: data.breakout_room_id || null,
+    sender_id: data.sender_id,
+    content: data.content,
+    created_at: new Date().toISOString(),
+  };
+
+  state.breakoutMessages.push(message);
+  return clone(message);
+};
+
+prisma.poll.findMany = async ({ where, include, orderBy } = {}) => {
+  const polls = state.polls
+    .filter((poll) => matchesWhere(poll, where))
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  return clone(polls.map((poll) => {
+    const result = { ...poll };
+    if (include?.options) {
+      result.options = state.pollOptions
+        .filter((option) => option.poll_id === poll.id)
+        .map((option) => {
+          const optionResult = { ...option };
+          if (include.options.include?.votes) {
+            optionResult.votes = state.pollVotes.filter((vote) => vote.option_id === option.id);
+          }
+          return optionResult;
+        });
+    }
+    return result;
+  }));
+};
+
+prisma.poll.findUnique = async ({ where, include } = {}) => {
+  const poll = state.polls.find((candidate) => candidate.id === where.id) || null;
+  if (!poll) {
+    return null;
+  }
+
+  const result = { ...poll };
+  if (include?.options) {
+    result.options = state.pollOptions
+      .filter((option) => option.poll_id === poll.id)
+      .map((option) => {
+        const optionResult = { ...option };
+        if (include.options.include?.votes) {
+          optionResult.votes = state.pollVotes.filter((vote) => vote.option_id === option.id);
+        }
+        return optionResult;
+      });
+  }
+  return clone(result);
+};
+
+prisma.poll.create = async ({ data }) => {
+  const poll = {
+    id: makeId('poll', state.polls),
+    meeting_id: data.meeting_id,
+    question: data.question,
+    is_closed: data.is_closed ?? false,
+    created_at: new Date().toISOString(),
+    closed_at: data.closed_at || null,
+  };
+
+  state.polls.push(poll);
+
+  const options = (data.options?.create || []).map((option) => {
+    const pollOption = {
+      id: makeId('pollOption', state.pollOptions),
+      poll_id: poll.id,
+      text: option.text,
+    };
+    state.pollOptions.push(pollOption);
+    return pollOption;
+  });
+
+  const result = { ...poll, options };
+  return clone(result);
+};
+
+prisma.poll.update = async ({ where, data }) => {
+  const poll = state.polls.find((candidate) => candidate.id === where.id);
+  Object.assign(poll, data);
+  return clone(poll);
+};
+
+prisma.pollVote.findUnique = async ({ where }) => {
+  const vote = state.pollVotes.find((candidate) => (
+    candidate.poll_id === where.poll_id_voter_id.poll_id &&
+    candidate.voter_id === where.poll_id_voter_id.voter_id
+  )) || null;
+  return clone(vote);
+};
+
+prisma.pollVote.create = async ({ data }) => {
+  const vote = {
+    id: makeId('pollVote', state.pollVotes),
+    poll_id: data.poll_id,
+    option_id: data.option_id,
+    voter_id: data.voter_id,
+    created_at: new Date().toISOString(),
+  };
+
+  state.pollVotes.push(vote);
+  return clone(vote);
+};
+
+prisma.pollVote.update = async ({ where, data }) => {
+  const vote = state.pollVotes.find((candidate) => candidate.id === where.id);
+  Object.assign(vote, data);
+  return clone(vote);
+};
+
 clientes.roomServiceClient.createRoom = async ({ name }) => ({ name });
 clientes.roomServiceClient.deleteRoom = async () => undefined;
 clientes.roomServiceClient.removeParticipant = async () => undefined;
@@ -481,6 +691,175 @@ test('meeting APIs cover create, join, token, screen share, and recording flow',
 
     assert.equal(downloadResponse.status, 200);
     assert.match(downloadResponse.body.data.url, /recordings/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('breakout APIs cover create, list, join, broadcast, and end flow', async () => {
+  resetState();
+  const server = app.listen(0);
+
+  try {
+    const createMeetingResponse = await request(server, '/api/v1/meetings/create', {
+      method: 'POST',
+      headers: makeAuthHeader(hostUser),
+      body: JSON.stringify({
+        title: 'Breakout Sprint',
+        type: 'instant',
+        waiting_room_on: true,
+        allow_screenshare: true,
+        screenshare_needs_approval: false,
+        is_recorded: false,
+        max_participants: 10,
+      }),
+    });
+
+    assert.equal(createMeetingResponse.status, 201);
+    const joinCode = createMeetingResponse.body.data.meeting.join_code;
+
+    const joinMeetingResponse = await request(server, '/api/v1/meetings/join', {
+      method: 'POST',
+      headers: makeAuthHeader(guestUser),
+      body: JSON.stringify({ joinCode }),
+    });
+    assert.equal(joinMeetingResponse.status, 200);
+
+    const admitResponse = await request(server, `/api/v1/meetings/${joinCode}/admit/${guestUser.id}`, {
+      method: 'POST',
+      headers: makeAuthHeader(hostUser),
+    });
+    assert.equal(admitResponse.status, 200);
+
+    const createBreakoutResponse = await request(server, `/api/v1/meetings/${joinCode}/breakout`, {
+      method: 'POST',
+      headers: makeAuthHeader(hostUser),
+      body: JSON.stringify({ rooms: [{ name: 'Team A' }, { name: 'Team B' }] }),
+    });
+
+    assert.equal(createBreakoutResponse.status, 201);
+    assert.equal(createBreakoutResponse.body.data.rooms.length, 2);
+
+    const listBreakoutResponse = await request(server, `/api/v1/meetings/${joinCode}/breakout`, {
+      method: 'GET',
+      headers: makeAuthHeader(guestUser),
+    });
+
+    assert.equal(listBreakoutResponse.status, 200);
+    assert.equal(listBreakoutResponse.body.data.rooms.length, 2);
+    assert.ok(listBreakoutResponse.body.data.myAssignment);
+
+    const roomId = listBreakoutResponse.body.data.myAssignment.roomId;
+    const joinBreakoutResponse = await request(server, `/api/v1/meetings/${joinCode}/breakout/${roomId}/join`, {
+      method: 'POST',
+      headers: makeAuthHeader(guestUser),
+    });
+
+    assert.equal(joinBreakoutResponse.status, 200);
+    assert.equal(joinBreakoutResponse.body.data.roomId, roomId);
+
+    const broadcastResponse = await request(server, `/api/v1/meetings/${joinCode}/breakout/broadcast`, {
+      method: 'POST',
+      headers: makeAuthHeader(hostUser),
+      body: JSON.stringify({ message: 'Breakout session open' }),
+    });
+
+    assert.equal(broadcastResponse.status, 200);
+
+    const endResponse = await request(server, `/api/v1/meetings/${joinCode}/breakout/end-all`, {
+      method: 'POST',
+      headers: makeAuthHeader(hostUser),
+    });
+
+    assert.equal(endResponse.status, 200);
+    assert.equal(endResponse.body.data.ended, true);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('poll APIs cover create, vote, results, and close flow', async () => {
+  resetState();
+  const server = app.listen(0);
+
+  try {
+    const createMeetingResponse = await request(server, '/api/v1/meetings/create', {
+      method: 'POST',
+      headers: makeAuthHeader(hostUser),
+      body: JSON.stringify({
+        title: 'Poll Review',
+        type: 'instant',
+        waiting_room_on: true,
+        allow_screenshare: false,
+        screenshare_needs_approval: false,
+        is_recorded: false,
+        max_participants: 10,
+      }),
+    });
+
+    assert.equal(createMeetingResponse.status, 201);
+    const joinCode = createMeetingResponse.body.data.meeting.join_code;
+
+    const joinMeetingResponse = await request(server, '/api/v1/meetings/join', {
+      method: 'POST',
+      headers: makeAuthHeader(guestUser),
+      body: JSON.stringify({ joinCode }),
+    });
+    assert.equal(joinMeetingResponse.status, 200);
+
+    const admitResponse = await request(server, `/api/v1/meetings/${joinCode}/admit/${guestUser.id}`, {
+      method: 'POST',
+      headers: makeAuthHeader(hostUser),
+    });
+    assert.equal(admitResponse.status, 200);
+
+    const pollResponse = await request(server, `/api/v1/meetings/${joinCode}/polls`, {
+      method: 'POST',
+      headers: makeAuthHeader(hostUser),
+      body: JSON.stringify({
+        question: 'Which feature should we build next?',
+        options: ['Breakout rooms', 'Recording', 'Polls'],
+      }),
+    });
+
+    assert.equal(pollResponse.status, 201);
+    assert.equal(pollResponse.body.data.options.length, 3);
+
+    const pollId = pollResponse.body.data.id;
+    const optionId = pollResponse.body.data.options[0].id;
+
+    const listPollsResponse = await request(server, `/api/v1/meetings/${joinCode}/polls`, {
+      method: 'GET',
+      headers: makeAuthHeader(guestUser),
+    });
+
+    assert.equal(listPollsResponse.status, 200);
+    assert.equal(listPollsResponse.body.data.length, 1);
+
+    const voteResponse = await request(server, `/api/v1/meetings/${joinCode}/polls/${pollId}/vote`, {
+      method: 'POST',
+      headers: makeAuthHeader(guestUser),
+      body: JSON.stringify({ optionId }),
+    });
+
+    assert.equal(voteResponse.status, 200);
+
+    const resultsResponse = await request(server, `/api/v1/meetings/${joinCode}/polls/${pollId}/results`, {
+      method: 'GET',
+      headers: makeAuthHeader(guestUser),
+    });
+
+    assert.equal(resultsResponse.status, 200);
+    assert.equal(resultsResponse.body.data.totalVotes, 1);
+    assert.equal(resultsResponse.body.data.results.find((option) => option.id === optionId).voteCount, 1);
+
+    const closeResponse = await request(server, `/api/v1/meetings/${joinCode}/polls/${pollId}/close`, {
+      method: 'POST',
+      headers: makeAuthHeader(hostUser),
+    });
+
+    assert.equal(closeResponse.status, 200);
+    assert.equal(closeResponse.body.data.is_closed, true);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
