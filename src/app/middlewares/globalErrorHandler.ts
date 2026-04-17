@@ -52,7 +52,7 @@ export const globalErrorHandler = async (
     errorSources = [{ path: "", message: err.message }];
   }
 
-  // ✅ Dev logging
+  // ✅ Always log request errors
   logger.error("request_error", {
     path: req.originalUrl,
     method: req.method,
