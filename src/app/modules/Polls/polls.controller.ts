@@ -25,7 +25,7 @@ const createPoll = catchAsync(async (req: Request, res: Response) => {
 });
 
 const listPolls = catchAsync(async (req: Request, res: Response) => {
-    const result = await PollServices.listPolls(req.params.code);
+    const result = await PollServices.listPolls(req.params.code, requireUserId(req));
 
     sendResponse(res, {
         statusCode: StatusCodes.OK,
@@ -47,7 +47,7 @@ const submitPollVote = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getPollResults = catchAsync(async (req: Request, res: Response) => {
-    const result = await PollServices.getPollResults(req.params.code, req.params.pollId);
+    const result = await PollServices.getPollResults(req.params.code, req.params.pollId, requireUserId(req));
 
     sendResponse(res, {
         statusCode: StatusCodes.OK,

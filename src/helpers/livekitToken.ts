@@ -14,7 +14,7 @@ export async function generateLiveKitToken({
 
   const at = new AccessToken(apiKey, apiSecret, {
     identity: userId,
-    ttl: '10m',
+    ttl: '2h',
   });
 
   at.addGrant({

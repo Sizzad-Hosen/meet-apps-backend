@@ -14,6 +14,49 @@ const submitVotePayloadSchema = z.object({
     optionId: z.string().uuid(),
 });
 
+const formatPoll = (
+    poll: {
+        id: string;
+        question: string;
+        is_closed: boolean;
+        created_at?: Date;
+        closed_at?: Date | null;
+        options: Array<{
+            id: string;
+            text: string;
+            votes: Array<{ voter_id: string }>;
+        }>;
+    },
+    currentUserId: string,
+) => {
+    const totalVotes = poll.options.reduce((sum, option) => sum + option.votes.length, 0);
+    const myVote = poll.options.find((option) =>
+        option.votes.some((vote) => vote.voter_id === currentUserId),
+    );
+
+    return {
+        id: poll.id,
+        question: poll.question,
+        is_closed: poll.is_closed,
+        created_at: poll.created_at,
+        closed_at: poll.closed_at,
+        totalVotes,
+        myVoteOptionId: myVote?.id ?? null,
+        options: poll.options.map((option) => {
+            const voteCount = option.votes.length;
+
+            return {
+                id: option.id,
+                text: option.text,
+                voteCount,
+                votes: voteCount,
+                percent: totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0,
+                selected: option.id === myVote?.id,
+            };
+        }),
+    };
+};
+
 const createPoll = async (code: string, payload: unknown, currentUserId: string) => {
     const meeting = await getMeetingByCodeOrThrow(code);
     await ensureHost(meeting.id, currentUserId);
@@ -25,22 +68,28 @@ const createPoll = async (code: string, payload: unknown, currentUserId: string)
         parsedPayload.options.map((option) => option.trim()),
     );
 
-    return poll;
-};
-
-const listPolls = async (code: string) => {
-    const meeting = await getMeetingByCodeOrThrow(code);
-
-    const polls = await pollRepository.listByMeetingId(meeting.id);
-
-    return polls.map((poll) => ({
+    return {
         ...poll,
+        totalVotes: 0,
+        myVoteOptionId: null,
         options: poll.options.map((option) => ({
             id: option.id,
             text: option.text,
-            voteCount: option.votes.length,
+            voteCount: 0,
+            votes: 0,
+            percent: 0,
+            selected: false,
         })),
-    }));
+    };
+};
+
+const listPolls = async (code: string, currentUserId: string) => {
+    const meeting = await getMeetingByCodeOrThrow(code);
+    await getParticipantOrThrow(meeting.id, currentUserId);
+
+    const polls = await pollRepository.listByMeetingId(meeting.id);
+
+    return polls.map((poll) => formatPoll(poll, currentUserId));
 };
 
 const submitPollVote = async (code: string, pollId: string, payload: unknown, currentUserId: string) => {
@@ -76,23 +125,33 @@ const submitPollVote = async (code: string, pollId: string, payload: unknown, cu
     });
 
     if (existingVote) {
-        return prisma.pollVote.update({
+        await prisma.pollVote.update({
             where: { id: existingVote.id },
             data: { option_id: option.id },
         });
+    } else {
+        await prisma.pollVote.create({
+            data: {
+                poll_id: poll.id,
+                option_id: option.id,
+                voter_id: currentUserId,
+            },
+        });
     }
 
-    return prisma.pollVote.create({
-        data: {
-            poll_id: poll.id,
-            option_id: option.id,
-            voter_id: currentUserId,
+    const updatedPoll = await prisma.poll.findUniqueOrThrow({
+        where: { id: poll.id },
+        include: {
+            options: { include: { votes: true } },
         },
     });
+
+    return formatPoll(updatedPoll, currentUserId);
 };
 
-const getPollResults = async (code: string, pollId: string) => {
+const getPollResults = async (code: string, pollId: string, currentUserId: string) => {
     const meeting = await getMeetingByCodeOrThrow(code);
+    await getParticipantOrThrow(meeting.id, currentUserId);
 
     const poll = await prisma.poll.findUnique({
         where: { id: pollId },
@@ -105,20 +164,16 @@ const getPollResults = async (code: string, pollId: string) => {
         throw new ApiError(StatusCodes.NOT_FOUND, "Poll not found");
     }
 
-    const results = poll.options.map((option) => ({
-        id: option.id,
-        text: option.text,
-        voteCount: option.votes.length,
-    }));
-
-    const totalVotes = results.reduce((sum, item) => sum + item.voteCount, 0);
+    const formattedPoll = formatPoll(poll, currentUserId);
 
     return {
-        pollId: poll.id,
-        question: poll.question,
-        is_closed: poll.is_closed,
-        totalVotes,
-        results,
+        pollId: formattedPoll.id,
+        question: formattedPoll.question,
+        is_closed: formattedPoll.is_closed,
+        totalVotes: formattedPoll.totalVotes,
+        myVoteOptionId: formattedPoll.myVoteOptionId,
+        results: formattedPoll.options,
+        options: formattedPoll.options,
     };
 };
 

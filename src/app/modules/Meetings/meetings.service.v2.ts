@@ -1,5 +1,6 @@
 import { MeetingStatus, ParticipantRole, ParticipantStatus } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
+import { TrackSource } from "livekit-server-sdk";
 import { generateJoinCode } from "../../../helpers/generateJoinCode";
 import { generateLiveKitToken, generateRoomName } from "../../../helpers/livekitToken";
 import { clientes } from "../../../helpers/s3";
@@ -465,6 +466,22 @@ const muteParticipant = async (code: string, targetUserId: string, currentUserId
   await ensureModerator(meeting.id, currentUserId);
   const participant = await getParticipantOrThrow(meeting.id, targetUserId);
 
+  try {
+    const liveParticipant = await clientes.roomServiceClient.getParticipant(meeting.livekit_room_name, targetUserId);
+    const microphoneTracks = liveParticipant.tracks.filter((track) => track.source === TrackSource.MICROPHONE);
+
+    await Promise.all(
+      microphoneTracks.map((track) =>
+        clientes.roomServiceClient.mutePublishedTrack(meeting.livekit_room_name, targetUserId, track.sid, true),
+      ),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.toLowerCase().includes("participant does not exist")) {
+      console.warn("mutePublishedTrack failed:", message);
+    }
+  }
+
   return prisma.meetingParticipant.update({
     where: { id: participant.id },
     data: { is_muted: true },
@@ -474,6 +491,35 @@ const muteParticipant = async (code: string, targetUserId: string, currentUserId
 const muteAll = async (code: string, currentUserId: string) => {
   const meeting = await getMeetingByCodeOrThrow(code);
   await ensureModerator(meeting.id, currentUserId);
+
+  const participants = await prisma.meetingParticipant.findMany({
+    where: {
+      meeting_id: meeting.id,
+      role: { not: ParticipantRole.host },
+      status: ParticipantStatus.admitted,
+    },
+    select: { user_id: true },
+  });
+
+  await Promise.all(
+    participants.map(async (participant) => {
+      try {
+        const liveParticipant = await clientes.roomServiceClient.getParticipant(meeting.livekit_room_name, participant.user_id);
+        const microphoneTracks = liveParticipant.tracks.filter((track) => track.source === TrackSource.MICROPHONE);
+
+        await Promise.all(
+          microphoneTracks.map((track) =>
+            clientes.roomServiceClient.mutePublishedTrack(meeting.livekit_room_name, participant.user_id, track.sid, true),
+          ),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.toLowerCase().includes("participant does not exist")) {
+          console.warn("mutePublishedTrack failed:", message);
+        }
+      }
+    }),
+  );
 
   await prisma.meetingParticipant.updateMany({
     where: {

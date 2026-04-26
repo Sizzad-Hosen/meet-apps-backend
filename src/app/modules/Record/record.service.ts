@@ -1,7 +1,6 @@
-import { EncodedFileOutput } from 'livekit-server-sdk';
+import { EncodedFileOutput, S3Upload } from 'livekit-server-sdk';
 import { StatusCodes } from 'http-status-codes';
 import path from 'path';
-import { mkdir } from 'fs/promises';
 import prisma from '../../../lib/prisma';
 import { clientes } from '../../../helpers/s3';
 import ApiError from '../../errors/ApiError';
@@ -16,6 +15,35 @@ const getMeetingByCode = async (code: string) => {
   }
 
   return meeting;
+};
+
+const getS3UploadConfig = () => {
+  const accessKey = process.env.LIVEKIT_EGRESS_S3_ACCESS_KEY || process.env.AWS_ACCESS_KEY_ID;
+  const secret = process.env.LIVEKIT_EGRESS_S3_SECRET || process.env.AWS_SECRET_ACCESS_KEY;
+  const region = process.env.LIVEKIT_EGRESS_S3_REGION || process.env.AWS_REGION;
+  const bucket = process.env.LIVEKIT_EGRESS_S3_BUCKET || process.env.S3_BUCKET;
+  const endpoint = process.env.LIVEKIT_EGRESS_S3_ENDPOINT;
+
+  const missing = [
+    !accessKey ? 'LIVEKIT_EGRESS_S3_ACCESS_KEY or AWS_ACCESS_KEY_ID' : null,
+    !secret ? 'LIVEKIT_EGRESS_S3_SECRET or AWS_SECRET_ACCESS_KEY' : null,
+    !bucket ? 'LIVEKIT_EGRESS_S3_BUCKET or S3_BUCKET' : null,
+  ].filter(Boolean);
+
+  if (missing.length) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      `Recording output is not configured. Missing ${missing.join(', ')}`
+    );
+  }
+
+  return new S3Upload({
+    accessKey,
+    secret,
+    ...(region ? { region } : {}),
+    ...(endpoint ? { endpoint } : {}),
+    bucket,
+  });
 };
 
 export const startRecording = async (code: string, currentUserId: string) => {
@@ -61,19 +89,20 @@ export const startRecording = async (code: string, currentUserId: string) => {
   }
 
   const filePath = `recordings/${meeting.id}/${Date.now()}.mp4`;
-  const directory = path.dirname(filePath);
-
-  await mkdir(directory, { recursive: true });
 
   const output = new EncodedFileOutput({
-    filepath: filePath
+    filepath: filePath,
+    output: {
+      case: 's3',
+      value: getS3UploadConfig()
+    }
   });
 
   let egressInfo;
   try {
     egressInfo = await clientes.egressClient.startRoomCompositeEgress(
       meeting.livekit_room_name,
-      output
+      { file: output }
     );
   } catch (error) {
     throw new ApiError(
