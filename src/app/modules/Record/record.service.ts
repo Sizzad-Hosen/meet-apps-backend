@@ -138,7 +138,7 @@ const stopRecording = async (code: string, currentUserId: string) => {
     data: {
       status,
       ended_at: new Date(),
-      ...(typeof durationSeconds === "number" ? { duration_seconds: String(durationSeconds) } : {}),
+      ...(typeof durationSeconds === "number" ? { duration_seconds: durationSeconds } : {}),
     }
   });
 };
@@ -185,8 +185,11 @@ const getDownloadUrl = async (recordingId: string, currentUserId: string) => {
 
   const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
 
+  if (!recording.s3_key) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Recording file is not available yet');
+  }
+
   const sanitizedPath = path.posix.normalize(recording.s3_key).replace(/^\/+/, '').replace(/^(\.\.\/)+/, '');
-  const encodedPath = sanitizedPath.split('/').map(encodeURIComponent).join('/');
 
   return {
     url: `${baseUrl}/api/v1/recordings/${recordingId}/download`,

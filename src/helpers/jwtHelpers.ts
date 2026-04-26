@@ -12,6 +12,8 @@ export const generateToken = (payload: any, secret: string, expiresIn: string) =
 interface IJwtPayload extends JwtPayload {
   email: string;
   role: string;
+  purpose?: string;
+  userId?: string;
 }
 export const verifyToken = async (token: string, secret: Secret): Promise<IJwtPayload> => {
 

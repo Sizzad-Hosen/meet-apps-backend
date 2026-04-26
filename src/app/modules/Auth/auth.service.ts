@@ -141,6 +141,95 @@ const forgotPasswordUser = async(payload: { email: string })=>{
 
 }
 
+const sendVerificationEmail = async(payload: { email: string })=>{
+  const user = await prisma.user.findUnique({
+    where: {
+      email: payload.email,
+    },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      isVerified: true,
+    },
+  });
+
+  if (!user) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'User not found with this email');
+  }
+
+  if (user.isVerified) {
+    return {
+      isVerified: true,
+      verificationLink: null,
+    };
+  }
+
+  const verificationToken = generateToken(
+    {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      purpose: 'email-verification',
+    },
+    config.jwt.reset_pass_secret as string,
+    config.jwt.reset_pass_token_expires_in as string
+  );
+
+  const frontendBaseUrl = config.reset_pass_link.replace('/reset-password', '');
+  const verificationLink = `${frontendBaseUrl}/verify-email?token=${verificationToken}`;
+
+  await sendEmail(
+    user.email,
+    `<p>Click <a href="${verificationLink}">here</a> to verify your Meet Apps email.</p>`
+  );
+
+  return {
+    isVerified: false,
+    verificationLink,
+  };
+}
+
+const verifyEmail = async(payload: { token: string })=>{
+  const decoded = await verifyToken(payload.token, config.jwt.reset_pass_secret as string);
+
+  if (decoded?.purpose !== 'email-verification' || !decoded?.email) {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, 'Invalid verification token');
+  }
+
+  const user = await prisma.user.findUnique({
+    where: {
+      email: decoded.email,
+    },
+  });
+
+  if (!user) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+  }
+
+  const verifiedUser = await prisma.user.update({
+    where: {
+      id: user.id,
+    },
+    data: {
+      isVerified: true,
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      avatarUrl: true,
+      isVerified: true,
+      createdAt: true,
+    },
+  });
+
+  return {
+    user: verifiedUser,
+  };
+}
+
 const resetPassword = async(payload: { email: string, newPassword: string })=>{
 
    const isUserExist = await prisma.user.findUnique({
@@ -228,6 +317,8 @@ export const AuthServices = {
   registerUser,
   loginUser,
   forgotPasswordUser,
+  sendVerificationEmail,
+  verifyEmail,
   resetPassword,
   refreshToken,
   logoutUser

@@ -65,6 +65,28 @@ const forgotPassword = catchAsync(async(req:Request, res:Response)=>{
   });
 })
 
+const sendVerificationEmail = catchAsync(async(req:Request, res:Response)=>{
+  const result = await AuthServices.sendVerificationEmail(req.body);
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: result.isVerified ? "Email is already verified" : "Verification email sent successfully!",
+    data: result,
+  });
+})
+
+const verifyEmail = catchAsync(async(req:Request, res:Response)=>{
+  const result = await AuthServices.verifyEmail(req.body);
+
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: "Email verified successfully!",
+    data: result,
+  });
+})
+
 const resetPassword = catchAsync(
     async (req: Request, res: Response) => {
 
@@ -127,6 +149,8 @@ export const AuthControllers = {
   register,
   login,
   forgotPassword,
+  sendVerificationEmail,
+  verifyEmail,
   resetPassword,
   refreshToken,
   logout
