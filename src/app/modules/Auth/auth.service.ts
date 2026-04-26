@@ -9,6 +9,18 @@ import { sendEmail } from '../../../shared/sendEmail';
 // import { blockToken } from '../../../helpers/tokenBlocklist';
 
 const registerUser = async (payload: any) => {
+  const existingUser = await prisma.user.findUnique({
+    where: {
+      email: payload.email,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (existingUser) {
+    throw new ApiError(StatusCodes.CONFLICT, 'User already exists with this email');
+  }
 
   const passwordHash = await bcrypt.hash(
     payload.password,
